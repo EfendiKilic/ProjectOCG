@@ -4,7 +4,8 @@ using Steamworks;
 public class LobbyManager : MonoBehaviour
 {
     public LobbyUI lobbyUI; // Inspector'dan atanacak
-    
+    public LobbyUIController lobbyUIController; // Inspector'dan atanacak
+
     // Callback'ler (Steam'den gelen cevaplar için)
     protected Callback<LobbyCreated_t> lobbyCreated;
     protected Callback<GameLobbyJoinRequested_t> gameLobbyJoinRequested;
@@ -136,6 +137,10 @@ public class LobbyManager : MonoBehaviour
         {
             lobbyUI.SetLobbyInfo(currentLobbyID, NetworkManager.Instance.isHost);
         }
+        if (lobbyUIController != null)
+        {
+            lobbyUIController.ShowLobby(currentLobbyID, NetworkManager.Instance.isHost);
+        }
     }
     
     // Lobiden ayrıl
@@ -153,24 +158,34 @@ public class LobbyManager : MonoBehaviour
     void OnLobbyChatUpdate(LobbyChatUpdate_t callback)
     {
         CSteamID userChanged = new CSteamID(callback.m_ulSteamIDUserChanged);
-        string userName = SteamFriends.GetFriendPersonaName(userChanged);
     
         // Lobiye giriş
         if ((callback.m_rgfChatMemberStateChange & (uint)EChatMemberStateChange.k_EChatMemberStateChangeEntered) != 0)
         {
-            Debug.Log($"➕ {userName} lobiye katıldı!");
+            Debug.Log($"➕ Oyuncu lobiye katıldı!");
         
-            // Eğer host isen, yeni oyuncuya bağlan
             if (NetworkManager.Instance.isHost)
             {
                 NetworkManager.Instance.ConnectToLobbyMembers(currentLobbyID);
+            }
+        
+            // UI'yı güncelle
+            if (lobbyUIController != null)
+            {
+                lobbyUIController.OnPlayerJoined(userChanged);
             }
         }
     
         // Lobiden çıkış
         if ((callback.m_rgfChatMemberStateChange & (uint)EChatMemberStateChange.k_EChatMemberStateChangeLeft) != 0)
         {
-            Debug.Log($"➖ {userName} lobiden ayrıldı!");
+            Debug.Log($"➖ Oyuncu lobiden ayrıldı!");
+        
+            // UI'yı güncelle
+            if (lobbyUIController != null)
+            {
+                lobbyUIController.OnPlayerLeft(userChanged);
+            }
         }
     }
 }

@@ -156,21 +156,34 @@ public class NetworkManager : MonoBehaviour
     // Gelen mesajları işle
     void HandleMessage(CSteamID senderID, string message)
     {
-        // Mesaj tipine göre işlem yap
+        // Chat mesajı mı?
+        if (message.StartsWith("CHAT|"))
+        {
+            string[] parts = message.Split('|');
+            if (parts.Length >= 3)
+            {
+                string senderName = parts[1];
+                string chatMessage = parts[2];
+            
+                // UI'ya chat mesajını ekle
+                LobbyUIController lobbyUI = FindObjectOfType<LobbyUIController>();
+                if (lobbyUI != null)
+                {
+                    lobbyUI.ReceiveChatMessage(senderName, chatMessage);
+                }
+            }
+            return;
+        }
+    
+        // Diğer mesajlar
         if (message == "HELLO")
         {
             Debug.Log("👋 Selamlaşma mesajı alındı!");
-            
-            // Cevap gönder
             SendMessageToPlayer(senderID, "HELLO_BACK");
         }
         else if (message == "HELLO_BACK")
         {
             Debug.Log("👋 Selamlaşma cevabı alındı!");
-        }
-        else
-        {
-            Debug.Log("📨 Genel mesaj: " + message);
         }
     }
     
