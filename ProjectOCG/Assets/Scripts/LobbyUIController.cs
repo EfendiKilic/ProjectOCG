@@ -73,46 +73,154 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-    // Oyuncu listesini yenile
     public void RefreshPlayerList()
+{
+    // Listeyi temizle
+    foreach (var item in playerListItems.Values)
     {
-        // Önce tüm listeyi temizle
-        foreach (var item in playerListItems.Values)
+        Destroy(item);
+    }
+    playerListItems.Clear();
+    
+    if (currentLobbyID == CSteamID.Nil) return;
+    
+    int memberCount = SteamMatchmaking.GetNumLobbyMembers(currentLobbyID);
+    string hostID = SteamMatchmaking.GetLobbyData(currentLobbyID, "host");
+    CSteamID mySteamID = SteamUser.GetSteamID();
+    
+    for (int i = 0; i < memberCount; i++)
+    {
+        CSteamID memberID = SteamMatchmaking.GetLobbyMemberByIndex(currentLobbyID, i);
+        string memberName = SteamFriends.GetFriendPersonaName(memberID);
+        bool isMe = (memberID == mySteamID);
+        
+        // Liste item oluştur
+        GameObject item = Instantiate(playerListItemPrefab, playerListContent);
+        
+        // Avatar
+        Image avatarImage = item.transform.Find("AvatarImage")?.GetComponent<Image>();
+        if (avatarImage != null)
         {
-            Destroy(item);
+            StartCoroutine(SteamAvatarLoader.LoadAvatarAsync(memberID, avatarImage));
         }
-        playerListItems.Clear();
         
-        if (currentLobbyID == CSteamID.Nil) return;
-        
-        // Lobideki oyuncuları ekle
-        int memberCount = SteamMatchmaking.GetNumLobbyMembers(currentLobbyID);
-        string hostID = SteamMatchmaking.GetLobbyData(currentLobbyID, "host");
-        
-        for (int i = 0; i < memberCount; i++)
+        // İsim
+        TextMeshProUGUI nameText = item.GetComponentInChildren<TextMeshProUGUI>();
+        if (memberID.ToString() == hostID)
         {
-            CSteamID memberID = SteamMatchmaking.GetLobbyMemberByIndex(currentLobbyID, i);
-            string memberName = SteamFriends.GetFriendPersonaName(memberID);
-            
-            // Liste item oluştur
-            GameObject item = Instantiate(playerListItemPrefab, playerListContent);
-            TextMeshProUGUI nameText = item.GetComponentInChildren<TextMeshProUGUI>();
-            
-            // Host işareti ekle
-            if (memberID.ToString() == hostID)
+            nameText.text = $"👑 {memberName} <color=yellow>(Host)</color>";
+        }
+        else
+        {
+            nameText.text = $"🎮 {memberName}";
+        }
+        
+        // ===== BUTONLAR =====
+        
+        // 1. MİKROFON BUTONU (sadece kendin için görünür)
+        Button micButton = item.transform.Find("MicrophoneButton")?.GetComponent<Button>();
+        if (micButton != null)
+        {
+            if (isMe)
             {
-                nameText.text = $"👑 {memberName} <color=yellow>(Host)</color>";
+                // Kendi mikrofonunu kontrol et
+                UpdateMicButtonText(micButton);
+                micButton.onClick.RemoveAllListeners();
+                micButton.onClick.AddListener(() => {
+                    VoiceManager.Instance.ToggleMicrophone();
+                    UpdateMicButtonText(micButton);
+                });
             }
             else
             {
-                nameText.text = $"🎮 {memberName}";
+                // Diğer oyuncular için gizle
+                micButton.gameObject.SetActive(false);
             }
-            
-            playerListItems.Add(memberID, item);
         }
         
-        Debug.Log($"Oyuncu listesi güncellendi: {memberCount} oyuncu");
+        // 2. KULAKLIK BUTONU (sadece kendin için görünür)
+        Button headphoneButton = item.transform.Find("HeadphoneButton")?.GetComponent<Button>();
+        if (headphoneButton != null)
+        {
+            if (isMe)
+            {
+                // Kendi kulaklığını kontrol et
+                UpdateHeadphoneButtonText(headphoneButton);
+                headphoneButton.onClick.RemoveAllListeners();
+                headphoneButton.onClick.AddListener(() => {
+                    VoiceManager.Instance.ToggleHeadphone();
+                    UpdateHeadphoneButtonText(headphoneButton);
+                });
+            }
+            else
+            {
+                // Diğer oyuncular için gizle
+                headphoneButton.gameObject.SetActive(false);
+            }
+        }
+        
+        // 3. DİĞERİNİ SUSTUR BUTONU (sadece diğer oyuncular için görünür)
+        Button muteOtherButton = item.transform.Find("MuteOtherButton")?.GetComponent<Button>();
+        if (muteOtherButton != null)
+        {
+            if (isMe)
+            {
+                // Kendini susturamazsın, gizle
+                muteOtherButton.gameObject.SetActive(false);
+            }
+            else
+            {
+                // Diğer oyuncuyu susturma butonu
+                UpdateMuteOtherButtonText(muteOtherButton, memberID);
+                
+                CSteamID capturedID = memberID;
+                muteOtherButton.onClick.RemoveAllListeners();
+                muteOtherButton.onClick.AddListener(() => {
+                    VoiceManager.Instance.ToggleMutePlayer(capturedID);
+                    UpdateMuteOtherButtonText(muteOtherButton, capturedID);
+                });
+            }
+        }
+        
+        playerListItems.Add(memberID, item);
     }
+    
+    Debug.Log($"Oyuncu listesi güncellendi: {memberCount} oyuncu");
+}
+
+// Mikrofon buton textini güncelle
+void UpdateMicButtonText(Button micButton)
+{
+    TextMeshProUGUI text = micButton.GetComponentInChildren<TextMeshProUGUI>();
+    if (text != null)
+    {
+        text.text = VoiceManager.Instance.isMicrophoneOn ? "🎤" : "🔇";
+        text.color = VoiceManager.Instance.isMicrophoneOn ? Color.green : Color.red;
+    }
+}
+
+// Kulaklık buton textini güncelle
+void UpdateHeadphoneButtonText(Button headphoneButton)
+{
+    TextMeshProUGUI text = headphoneButton.GetComponentInChildren<TextMeshProUGUI>();
+    if (text != null)
+    {
+        text.text = VoiceManager.Instance.isHeadphoneOn ? "🎧" : "🔇";
+        text.color = VoiceManager.Instance.isHeadphoneOn ? Color.green : Color.red;
+    }
+}
+
+// Diğer oyuncuyu sustur buton textini güncelle
+void UpdateMuteOtherButtonText(Button muteButton, CSteamID playerID)
+{
+    TextMeshProUGUI text = muteButton.GetComponentInChildren<TextMeshProUGUI>();
+    if (text != null)
+    {
+        bool isMuted = VoiceManager.Instance.IsPlayerMuted(playerID);
+        text.text = isMuted ? "🔊" : "🔇";
+        text.color = isMuted ? Color.red : Color.white;
+    }
+}
     
     // Chat mesajı ekle
     public void AddChatMessage(string sender, string message, Color color)
@@ -163,21 +271,36 @@ public class LobbyUIController : MonoBehaviour
     {
         // LobbyManager'dan çık
         FindObjectOfType<LobbyManager>().LeaveLobby();
-        
+    
         // NetworkManager bağlantılarını kes
         NetworkManager.Instance.DisconnectAll();
-        
+    
         // Ana menüye dön
         ShowMainMenu();
-        
-        // Listeyi temizle
+    
+        // Oyuncu listesini temizle
         foreach (var item in playerListItems.Values)
         {
             Destroy(item);
         }
         playerListItems.Clear();
-        
+    
+        // CHAT GEÇMİŞİNİ TEMİZLE
+        ClearChatHistory();
+    
         currentLobbyID = CSteamID.Nil;
+    }
+
+// Chat geçmişini temizle
+    void ClearChatHistory()
+    {
+        // Chat content'indeki tüm mesajları sil
+        foreach (Transform child in chatContent)
+        {
+            Destroy(child.gameObject);
+        }
+    
+        Debug.Log("Chat geçmişi temizlendi");
     }
     
     // Oyuncu lobiye katıldığında

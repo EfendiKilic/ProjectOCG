@@ -129,25 +129,37 @@ public class NetworkManager : MonoBehaviour
         }
     }
     
-    // Gelen mesajları oku
     void ReceiveMessages()
     {
         uint packetSize;
-        
-        // Bekleyen paket var mı kontrol et
+    
         while (SteamNetworking.IsP2PPacketAvailable(out packetSize, 0))
         {
             byte[] data = new byte[packetSize];
             CSteamID senderID;
-            
-            // Paketi oku
+        
             if (SteamNetworking.ReadP2PPacket(data, packetSize, out uint bytesRead, out senderID, 0))
             {
+                // İlk 6 byte "VOICE|" mı kontrol et
+                if (bytesRead > 6)
+                {
+                    string prefix = System.Text.Encoding.UTF8.GetString(data, 0, 6);
+                
+                    if (prefix == "VOICE|")
+                    {
+                        // Ses verisi
+                        byte[] voiceData = new byte[bytesRead - 6];
+                        System.Buffer.BlockCopy(data, 6, voiceData, 0, voiceData.Length);
+                    
+                        // VoiceManager'a ilet
+                        VoiceManager.Instance?.ReceiveVoiceData(senderID, voiceData);
+                        continue;
+                    }
+                }
+            
+                // Normal mesaj
                 string message = System.Text.Encoding.UTF8.GetString(data, 0, (int)bytesRead);
-                
                 Debug.Log($"📥 Mesaj alındı ← {SteamFriends.GetFriendPersonaName(senderID)}: {message}");
-                
-                // Mesajı işle
                 HandleMessage(senderID, message);
             }
         }
@@ -214,5 +226,38 @@ public class NetworkManager : MonoBehaviour
     public List<CSteamID> GetConnectedPlayers()
     {
         return connectedPlayers;
+    }
+    
+    // Ses verisini tüm oyunculara gönder
+    public void SendVoiceToAll(byte[] voiceData)
+    {
+        foreach (CSteamID playerID in connectedPlayers)
+        {
+            SendVoiceToPlayer(playerID, voiceData);
+        }
+    }
+
+    // Belirli bir oyuncuya ses gönder
+    public void SendVoiceToPlayer(CSteamID targetID, byte[] voiceData)
+    {
+        // "VOICE|" prefix ekle
+        byte[] prefix = System.Text.Encoding.UTF8.GetBytes("VOICE|");
+        byte[] data = new byte[prefix.Length + voiceData.Length];
+    
+        System.Buffer.BlockCopy(prefix, 0, data, 0, prefix.Length);
+        System.Buffer.BlockCopy(voiceData, 0, data, prefix.Length, voiceData.Length);
+    
+        bool success = SteamNetworking.SendP2PPacket(
+            targetID,
+            data,
+            (uint)data.Length,
+            EP2PSend.k_EP2PSendUnreliableNoDelay, // Ses için hızlı gönderim
+            0
+        );
+    
+        if (!success)
+        {
+            Debug.LogWarning($"⚠️ Ses verisi gönderilemedi!");
+        }
     }
 }
