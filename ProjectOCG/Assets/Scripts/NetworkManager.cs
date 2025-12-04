@@ -15,6 +15,10 @@ public class NetworkManager : MonoBehaviour
     // Bu oyuncu host mu?
     public bool isHost = false;
     
+    // KANAL SİSTEMİ (yeni!)
+    private const int CHANNEL_MESSAGES = 0; // Normal mesajlar
+    private const int CHANNEL_VOICE = 1;    // Ses verisi (hızlı)
+    
     void Awake()
     {
         if (Instance == null)
@@ -39,13 +43,14 @@ public class NetworkManager : MonoBehaviour
         // P2P bağlantı isteği callback'i
         p2pSessionRequest = Callback<P2PSessionRequest_t>.Create(OnP2PSessionRequest);
         
-        Debug.Log("NetworkManager hazır!");
+        Debug.Log("NetworkManager hazır! (Steam Native optimizasyonlu)");
     }
     
     void Update()
     {
-        // Gelen mesajları kontrol et
+        // Gelen mesajları kontrol et (her iki kanal)
         ReceiveMessages();
+        ReceiveVoiceData();
     }
     
     // P2P bağlantı isteği geldiğinde
@@ -105,7 +110,7 @@ public class NetworkManager : MonoBehaviour
             data,
             (uint)data.Length,
             EP2PSend.k_EP2PSendReliable,
-            0
+            CHANNEL_MESSAGES // Kanal 0
         );
         
         if (success)
@@ -129,38 +134,46 @@ public class NetworkManager : MonoBehaviour
         }
     }
     
+    // Normal mesajları al (Kanal 0)
     void ReceiveMessages()
     {
         uint packetSize;
     
-        while (SteamNetworking.IsP2PPacketAvailable(out packetSize, 0))
+        while (SteamNetworking.IsP2PPacketAvailable(out packetSize, CHANNEL_MESSAGES))
         {
             byte[] data = new byte[packetSize];
             CSteamID senderID;
         
-            if (SteamNetworking.ReadP2PPacket(data, packetSize, out uint bytesRead, out senderID, 0))
+            if (SteamNetworking.ReadP2PPacket(data, packetSize, out uint bytesRead, out senderID, CHANNEL_MESSAGES))
             {
-                // İlk 6 byte "VOICE|" mı kontrol et
-                if (bytesRead > 6)
-                {
-                    string prefix = System.Text.Encoding.UTF8.GetString(data, 0, 6);
-                
-                    if (prefix == "VOICE|")
-                    {
-                        // Ses verisi
-                        byte[] voiceData = new byte[bytesRead - 6];
-                        System.Buffer.BlockCopy(data, 6, voiceData, 0, voiceData.Length);
-                    
-                        // VoiceManager'a ilet
-                        VoiceManager.Instance?.ReceiveVoiceData(senderID, voiceData);
-                        continue;
-                    }
-                }
-            
                 // Normal mesaj
                 string message = System.Text.Encoding.UTF8.GetString(data, 0, (int)bytesRead);
                 Debug.Log($"📥 Mesaj alındı ← {SteamFriends.GetFriendPersonaName(senderID)}: {message}");
                 HandleMessage(senderID, message);
+            }
+        }
+    }
+    
+    // Ses verilerini al (Kanal 1) - YENİ!
+    void ReceiveVoiceData()
+    {
+        uint packetSize;
+    
+        while (SteamNetworking.IsP2PPacketAvailable(out packetSize, CHANNEL_VOICE))
+        {
+            byte[] voiceData = new byte[packetSize];
+            CSteamID senderID;
+        
+            if (SteamNetworking.ReadP2PPacket(voiceData, packetSize, out uint bytesRead, out senderID, CHANNEL_VOICE))
+            {
+                // Direkt VoiceManager'a ilet (prefix yok!)
+                if (VoiceManager.Instance != null)
+                {
+                    byte[] actualData = new byte[bytesRead];
+                    System.Array.Copy(voiceData, actualData, bytesRead);
+                    
+                    VoiceManager.Instance.ReceiveVoiceData(senderID, actualData);
+                }
             }
         }
     }
@@ -228,6 +241,8 @@ public class NetworkManager : MonoBehaviour
         return connectedPlayers;
     }
     
+    // ===== SES GÖNDERİMİ (OPTİMİZE EDİLMİŞ) =====
+    
     // Ses verisini tüm oyunculara gönder
     public void SendVoiceToAll(byte[] voiceData)
     {
@@ -237,21 +252,21 @@ public class NetworkManager : MonoBehaviour
         }
     }
 
-    // Belirli bir oyuncuya ses gönder
+    // Belirli bir oyuncuya ses gönder (PREFİX YOK - KANAL 1)
     public void SendVoiceToPlayer(CSteamID targetID, byte[] voiceData)
     {
-        byte[] prefix = System.Text.Encoding.UTF8.GetBytes("VOICE|");
-        byte[] data = new byte[prefix.Length + voiceData.Length];
-    
-        System.Buffer.BlockCopy(prefix, 0, data, 0, prefix.Length);
-        System.Buffer.BlockCopy(voiceData, 0, data, prefix.Length, voiceData.Length);
-    
         bool success = SteamNetworking.SendP2PPacket(
             targetID,
-            data,
-            (uint)data.Length,
-            EP2PSend.k_EP2PSendUnreliableNoDelay, // ✅ En hızlı mod (ses için)
-            0
+            voiceData,
+            (uint)voiceData.Length,
+            EP2PSend.k_EP2PSendUnreliableNoDelay, // En hızlı mod
+            CHANNEL_VOICE // Kanal 1 (ses için ayrı kanal)
         );
+        
+        // Sadece hata durumunda log (spam önleme)
+        if (!success)
+        {
+            Debug.LogWarning($"⚠️ Ses gönderilemedi: {SteamFriends.GetFriendPersonaName(targetID)}");
+        }
     }
 }

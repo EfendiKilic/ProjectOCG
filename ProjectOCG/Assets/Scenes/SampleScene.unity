@@ -2792,11 +2792,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c7acc3999e2931c4b951ef22e4eff856, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoiceManager
-  recordFrequency: 16000
-  bufferLengthMs: 20
-  volumeThreshold: 0.003
   isMicrophoneOn: 0
   isHeadphoneOn: 0
+  voiceSendInterval: 0.05
+  volumeBoost: 15
+  useSmoothing: 1
 --- !u!4 &1259340665
 Transform:
   m_ObjectHideFlags: 0

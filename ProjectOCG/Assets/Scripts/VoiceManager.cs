@@ -1,34 +1,33 @@
 using UnityEngine;
 using Steamworks;
 using System.Collections.Generic;
-using System.Collections;
 
+/// <summary>
+/// Steam'in native P2P Voice Chat sistemi
+/// REPO ve Lethal Company gibi oyunlar bu sistemi kullanır
+/// Discord/Steam Party Chat kalitesinde
+/// </summary>
 public class VoiceManager : MonoBehaviour
 {
     public static VoiceManager Instance;
     
-    [Header("Ayarlar")]
-    public int recordFrequency = 44100; // 44.1kHz (CD kalitesi)
-    public int bufferLengthMs = 100; // 100ms buffer (daha smooth)
-    public float volumeThreshold = 0.005f; // Sessizlik eşiği
-    
-    [Header("Kendi Durumum")]
+    [Header("Kontroller")]
     public bool isMicrophoneOn = false;
     public bool isHeadphoneOn = false;
     
-    // Mikrofon
-    private AudioClip microphoneClip;
-    private string microphoneDevice;
-    private int lastSamplePosition = 0;
-    private float[] audioBuffer;
-    private int bufferSize;
+    [Header("Ayarlar")]
+    [Range(0.5f, 5f)]
+    public float outputVolume = 2.0f;
     
     // Susturulmuş oyuncular
     private HashSet<CSteamID> mutedPlayers = new HashSet<CSteamID>();
     
-    // Ses oynatma için AudioSource'lar + Jitter Buffer
-    private Dictionary<CSteamID, AudioSource> playerAudioSources = new Dictionary<CSteamID, AudioSource>();
-    private Dictionary<CSteamID, Queue<float[]>> audioBuffers = new Dictionary<CSteamID, Queue<float[]>>();
+    // AudioSource pool
+    private Dictionary<CSteamID, AudioSource> audioSources = new Dictionary<CSteamID, AudioSource>();
+    
+    // Steam voice buffer
+    private const uint VOICE_BUFFER_SIZE = 20480; // 20KB
+    private byte[] voiceBuffer = new byte[VOICE_BUFFER_SIZE];
     
     void Awake()
     {
@@ -43,34 +42,16 @@ public class VoiceManager : MonoBehaviour
         }
     }
     
-    void Start()
-    {
-        // Buffer boyutunu hesapla
-        bufferSize = (int)(recordFrequency * bufferLengthMs / 1000f);
-        audioBuffer = new float[bufferSize];
-        
-        // Mikrofon cihazını al
-        if (Microphone.devices.Length > 0)
-        {
-            microphoneDevice = Microphone.devices[0];
-            Debug.Log($"🎤 Mikrofon bulundu: {microphoneDevice}");
-        }
-        else
-        {
-            Debug.LogWarning("⚠️ Mikrofon bulunamadı!");
-        }
-    }
-    
     void Update()
     {
-        // Mikrofon açıksa ses gönder
-        if (isMicrophoneOn && Microphone.IsRecording(microphoneDevice))
+        // Mikrofon açıksa Steam'e kaydet
+        if (isMicrophoneOn)
         {
-            ProcessMicrophone();
+            SendVoice();
         }
     }
     
-    // ===== MİKROFON KONTROLÜ =====
+    // ===== MİKROFON =====
     
     public void ToggleMicrophone()
     {
@@ -86,186 +67,160 @@ public class VoiceManager : MonoBehaviour
     
     void StartMicrophone()
     {
-        if (string.IsNullOrEmpty(microphoneDevice))
+        if (!SteamManager.Initialized)
         {
-            Debug.LogError("❌ Mikrofon bulunamadı!");
+            Debug.LogError("❌ Steam başlatılmamış!");
             return;
         }
         
         isMicrophoneOn = true;
+        SteamUser.StartVoiceRecording();
         
-        // Daha uzun buffer (1 saniye) ama küçük parçalar gönder
-        microphoneClip = Microphone.Start(microphoneDevice, true, 1, recordFrequency);
-        lastSamplePosition = 0;
-        
-        Debug.Log("🎤 Mikrofon açıldı!");
+        Debug.Log("🎤 Mikrofon AÇIK");
     }
     
     void StopMicrophone()
     {
-        if (Microphone.IsRecording(microphoneDevice))
-        {
-            Microphone.End(microphoneDevice);
-        }
-        
         isMicrophoneOn = false;
-        Debug.Log("🎤 Mikrofon kapandı!");
+        SteamUser.StopVoiceRecording();
+        
+        Debug.Log("🎤 Mikrofon KAPALI");
     }
     
-    // ===== KULAKLIK KONTROLÜ =====
+    // ===== KULAKLIK =====
     
     public void ToggleHeadphone()
     {
         isHeadphoneOn = !isHeadphoneOn;
         
-        if (isHeadphoneOn)
+        Debug.Log($"🎧 Kulaklık: {(isHeadphoneOn ? "AÇIK" : "KAPALI")}");
+        
+        if (!isHeadphoneOn)
         {
-            Debug.Log("🎧 Kulaklık açıldı!");
-        }
-        else
-        {
-            Debug.Log("🎧 Kulaklık kapandı!");
-            
             // Tüm sesleri durdur
-            foreach (var audioSource in playerAudioSources.Values)
+            foreach (var source in audioSources.Values)
             {
-                if (audioSource != null)
+                if (source != null) source.Stop();
+            }
+        }
+    }
+    
+    // ===== SES GÖNDERME =====
+    
+    void SendVoice()
+    {
+        uint bytesAvailable = 0;
+        
+        // Steam'den mevcut ses verisini kontrol et
+        if (SteamUser.GetAvailableVoice(out bytesAvailable) == EVoiceResult.k_EVoiceResultOK)
+        {
+            if (bytesAvailable > 0)
+            {
+                uint bytesWritten = 0;
+                
+                // Sıkıştırılmış sesi al (Steam'in kendi codec'i)
+                EVoiceResult result = SteamUser.GetVoice(
+                    true, // compressed
+                    voiceBuffer,
+                    VOICE_BUFFER_SIZE,
+                    out bytesWritten
+                );
+                
+                if (result == EVoiceResult.k_EVoiceResultOK && bytesWritten > 0)
                 {
-                    audioSource.Stop();
+                    // Veriyi hazırla
+                    byte[] voiceData = new byte[bytesWritten];
+                    System.Buffer.BlockCopy(voiceBuffer, 0, voiceData, 0, (int)bytesWritten);
+                    
+                    // Tüm oyunculara gönder
+                    NetworkManager.Instance.SendVoiceToAll(voiceData);
                 }
             }
-            
-            // Buffer'ları temizle
-            foreach (var buffer in audioBuffers.Values)
-            {
-                buffer.Clear();
-            }
         }
     }
     
-    // ===== SES İŞLEME (İYİLEŞTİRİLMİŞ) =====
+    // ===== SES ALMA =====
     
-    void ProcessMicrophone()
+    public void ReceiveVoiceData(CSteamID senderID, byte[] compressedVoice)
     {
-        int currentPosition = Microphone.GetPosition(microphoneDevice);
-    
-        if (currentPosition < 0)
-        {
-            Debug.LogWarning("⚠️ Mikrofon pozisyonu geçersiz!");
-            return;
-        }
-    
-        if (currentPosition == lastSamplePosition)
-            return;
-    
-        // Kaç sample var?
-        int sampleCount = currentPosition - lastSamplePosition;
-        if (sampleCount < 0)
-            sampleCount += microphoneClip.samples;
-    
-        Debug.Log($"🎤 Sample count: {sampleCount}, Buffer size: {bufferSize}");
-    
-        // Yeterli veri var mı?
-        if (sampleCount < bufferSize)
-        {
-            Debug.Log($"⚠️ Yeterli veri yok: {sampleCount} < {bufferSize}");
-            return;
-        }
-    
-        // Veriyi al
-        microphoneClip.GetData(audioBuffer, lastSamplePosition);
-    
-        // Ses seviyesini kontrol et
-        float volume = GetAudioVolume(audioBuffer);
-        Debug.Log($"🔊 Ses seviyesi: {volume:F4} (Eşik: {volumeThreshold})");
-    
-        if (volume > volumeThreshold)
-        {
-            // Sıkıştırma ve gönderme
-            byte[] voiceData = EncodeAudio(audioBuffer);
-            Debug.Log($"📤 SES GÖNDERİLİYOR! Boyut: {voiceData.Length} bytes");
-            NetworkManager.Instance.SendVoiceToAll(voiceData);
-        }
-        else
-        {
-            Debug.Log($"🔇 Ses çok düşük, gönderilmedi");
-        }
-    
-        // Pozisyonu güncelle
-        lastSamplePosition = (lastSamplePosition + bufferSize) % microphoneClip.samples;
-    }
-    
-    // ===== SES ALMA (İYİLEŞTİRİLMİŞ) =====
-    
-    public void ReceiveVoiceData(CSteamID senderID, byte[] voiceData)
-    {
-        // Kulaklık kapalıysa çalma
-        if (!isHeadphoneOn)
-            return;
+        if (!isHeadphoneOn) return;
+        if (mutedPlayers.Contains(senderID)) return;
         
-        // Susturulmuşsa çalma
-        if (mutedPlayers.Contains(senderID))
-            return;
-        
-        // Sesi decode et
-        float[] samples = DecodeAudio(voiceData);
-        
-        // Jitter buffer'a ekle
-        if (!audioBuffers.ContainsKey(senderID))
-        {
-            audioBuffers[senderID] = new Queue<float[]>();
-        }
-        
-        audioBuffers[senderID].Enqueue(samples);
-        
-        // AudioSource oluştur
-        if (!playerAudioSources.ContainsKey(senderID))
+        // AudioSource oluştur (ilk kez)
+        if (!audioSources.ContainsKey(senderID))
         {
             CreateAudioSource(senderID);
         }
         
-        // Eğer yeterli buffer varsa oynat
-        AudioSource source = playerAudioSources[senderID];
-        if (audioBuffers[senderID].Count >= 2 && !source.isPlaying)
+        // Steam ile decompress et
+        uint bytesWritten = 0;
+        uint sampleRate = 11025; // 11kHz (optimum kalite/performans)
+        byte[] pcmBuffer = new byte[22050]; // 2 saniye buffer
+        
+        EVoiceResult result = SteamUser.DecompressVoice(
+            compressedVoice,
+            (uint)compressedVoice.Length,
+            pcmBuffer,
+            (uint)pcmBuffer.Length,
+            out bytesWritten,
+            sampleRate
+        );
+        
+        if (result == EVoiceResult.k_EVoiceResultOK && bytesWritten > 0)
         {
-            StartCoroutine(PlayBufferedAudio(senderID));
+            // PCM → Float
+            float[] samples = ConvertToFloat(pcmBuffer, (int)bytesWritten);
+            
+            // AudioClip oluştur
+            AudioClip clip = AudioClip.Create(
+                "Voice",
+                samples.Length,
+                1, // mono
+                (int)sampleRate,
+                false
+            );
+            clip.SetData(samples, 0);
+            
+            // Oynat
+            AudioSource source = audioSources[senderID];
+            source.clip = clip;
+            source.volume = outputVolume;
+            source.Play();
         }
     }
     
     // AudioSource oluştur
-    void CreateAudioSource(CSteamID senderID)
+    void CreateAudioSource(CSteamID playerID)
     {
-        GameObject audioObj = new GameObject($"Voice_{senderID}");
-        audioObj.transform.SetParent(transform);
+        string playerName = SteamFriends.GetFriendPersonaName(playerID);
         
-        AudioSource audioSource = audioObj.AddComponent<AudioSource>();
-        audioSource.loop = false;
-        audioSource.spatialBlend = 0; // 2D ses
-        audioSource.volume = 1f;
-        audioSource.priority = 0; // En yüksek öncelik
+        GameObject obj = new GameObject($"Voice_{playerName}");
+        obj.transform.SetParent(transform);
         
-        playerAudioSources.Add(senderID, audioSource);
+        AudioSource source = obj.AddComponent<AudioSource>();
+        source.playOnAwake = false;
+        source.loop = false;
+        source.spatialBlend = 0f; // 2D
+        source.priority = 0; // En yüksek öncelik
+        
+        audioSources[playerID] = source;
+        
+        Debug.Log($"🎙️ {playerName} konuşmaya başladı");
     }
     
-    // Buffer'dan oynat (smooth)
-    IEnumerator PlayBufferedAudio(CSteamID senderID)
+    // PCM → Float dönüşüm
+    float[] ConvertToFloat(byte[] pcm, int length)
     {
-        AudioSource source = playerAudioSources[senderID];
-        Queue<float[]> buffer = audioBuffers[senderID];
+        int sampleCount = length / 2;
+        float[] samples = new float[sampleCount];
         
-        while (buffer.Count > 0 && isHeadphoneOn && !mutedPlayers.Contains(senderID))
+        for (int i = 0; i < sampleCount; i++)
         {
-            float[] samples = buffer.Dequeue();
-            
-            AudioClip clip = AudioClip.Create("VoiceClip", samples.Length, 1, recordFrequency, false);
-            clip.SetData(samples, 0);
-            
-            source.clip = clip;
-            source.Play();
-            
-            // Clip bitene kadar bekle
-            yield return new WaitForSeconds((float)samples.Length / recordFrequency);
+            short pcmSample = (short)(pcm[i * 2] | (pcm[i * 2 + 1] << 8));
+            samples[i] = pcmSample / 32768f;
         }
+        
+        return samples;
     }
     
     // ===== OYUNCU SUSTURMA =====
@@ -275,23 +230,16 @@ public class VoiceManager : MonoBehaviour
         if (mutedPlayers.Contains(playerID))
         {
             mutedPlayers.Remove(playerID);
-            Debug.Log($"🔊 Susturma kaldırıldı");
+            Debug.Log("🔊 Susturma kaldırıldı");
         }
         else
         {
             mutedPlayers.Add(playerID);
-            Debug.Log($"🔇 Susturuldu");
+            Debug.Log("🔇 Oyuncu susturuldu");
             
-            // Sesini durdur
-            if (playerAudioSources.ContainsKey(playerID))
+            if (audioSources.ContainsKey(playerID))
             {
-                playerAudioSources[playerID].Stop();
-            }
-            
-            // Buffer'ı temizle
-            if (audioBuffers.ContainsKey(playerID))
-            {
-                audioBuffers[playerID].Clear();
+                audioSources[playerID].Stop();
             }
         }
     }
@@ -301,49 +249,15 @@ public class VoiceManager : MonoBehaviour
         return mutedPlayers.Contains(playerID);
     }
     
-    // ===== SES KALİTESİ FONKSİYONLARI =====
-    
-    float GetAudioVolume(float[] samples)
-    {
-        float sum = 0;
-        for (int i = 0; i < samples.Length; i++)
-        {
-            sum += Mathf.Abs(samples[i]);
-        }
-        return sum / samples.Length;
-    }
-    
-    // Encode (16-bit PCM)
-    byte[] EncodeAudio(float[] samples)
-    {
-        byte[] bytes = new byte[samples.Length * 2];
-        
-        for (int i = 0; i < samples.Length; i++)
-        {
-            short value = (short)(Mathf.Clamp(samples[i], -1f, 1f) * short.MaxValue);
-            bytes[i * 2] = (byte)(value & 0xFF);
-            bytes[i * 2 + 1] = (byte)((value >> 8) & 0xFF);
-        }
-        
-        return bytes;
-    }
-    
-    // Decode (16-bit PCM)
-    float[] DecodeAudio(byte[] bytes)
-    {
-        float[] samples = new float[bytes.Length / 2];
-        
-        for (int i = 0; i < samples.Length; i++)
-        {
-            short value = (short)(bytes[i * 2] | (bytes[i * 2 + 1] << 8));
-            samples[i] = value / (float)short.MaxValue;
-        }
-        
-        return samples;
-    }
-    
-    void OnApplicationQuit()
+    void OnDestroy()
     {
         StopMicrophone();
+        
+        foreach (var source in audioSources.Values)
+        {
+            if (source != null) Destroy(source.gameObject);
+        }
+        
+        audioSources.Clear();
     }
 }
