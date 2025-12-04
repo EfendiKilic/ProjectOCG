@@ -188,39 +188,56 @@ public class LobbyUIController : MonoBehaviour
     Debug.Log($"Oyuncu listesi güncellendi: {memberCount} oyuncu");
 }
 
-// Mikrofon buton textini güncelle
-void UpdateMicButtonText(Button micButton)
-{
-    TextMeshProUGUI text = micButton.GetComponentInChildren<TextMeshProUGUI>();
-    if (text != null)
+    // Mikrofon buton textini güncelle
+    void UpdateMicButtonText(Button micButton)
     {
-        text.text = VoiceManager.Instance.isMicrophoneOn ? "🎤" : "🔇";
-        text.color = VoiceManager.Instance.isMicrophoneOn ? Color.green : Color.red;
+        Image buttonImage = micButton.GetComponent<Image>();
+        TextMeshProUGUI text = micButton.GetComponentInChildren<TextMeshProUGUI>();
+    
+        if (buttonImage != null)
+        {
+            buttonImage.color = VoiceManager.Instance.isMicrophoneOn ? Color.green : Color.red;
+        }
+    
+        if (text != null)
+        {
+            text.text = "mic"; // Sabit emoji
+        }
     }
-}
 
-// Kulaklık buton textini güncelle
-void UpdateHeadphoneButtonText(Button headphoneButton)
-{
-    TextMeshProUGUI text = headphoneButton.GetComponentInChildren<TextMeshProUGUI>();
-    if (text != null)
+    void UpdateHeadphoneButtonText(Button headphoneButton)
     {
-        text.text = VoiceManager.Instance.isHeadphoneOn ? "🎧" : "🔇";
-        text.color = VoiceManager.Instance.isHeadphoneOn ? Color.green : Color.red;
+        Image buttonImage = headphoneButton.GetComponent<Image>();
+        TextMeshProUGUI text = headphoneButton.GetComponentInChildren<TextMeshProUGUI>();
+    
+        if (buttonImage != null)
+        {
+            buttonImage.color = VoiceManager.Instance.isHeadphoneOn ? Color.green : Color.red;
+        }
+    
+        if (text != null)
+        {
+            text.text = "hs"; // Sabit emoji
+        }
     }
-}
 
-// Diğer oyuncuyu sustur buton textini güncelle
-void UpdateMuteOtherButtonText(Button muteButton, CSteamID playerID)
-{
-    TextMeshProUGUI text = muteButton.GetComponentInChildren<TextMeshProUGUI>();
-    if (text != null)
+    void UpdateMuteOtherButtonText(Button muteButton, CSteamID playerID)
     {
+        Image buttonImage = muteButton.GetComponent<Image>();
+        TextMeshProUGUI text = muteButton.GetComponentInChildren<TextMeshProUGUI>();
+    
         bool isMuted = VoiceManager.Instance.IsPlayerMuted(playerID);
-        text.text = isMuted ? "🔊" : "🔇";
-        text.color = isMuted ? Color.red : Color.white;
+    
+        if (buttonImage != null)
+        {
+            buttonImage.color = isMuted ? Color.red : Color.white;
+        }
+    
+        if (text != null)
+        {
+            text.text = "mute"; // Sabit emoji
+        }
     }
-}
     
     // Chat mesajı ekle
     public void AddChatMessage(string sender, string message, Color color)

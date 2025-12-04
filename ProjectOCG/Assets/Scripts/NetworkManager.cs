@@ -240,7 +240,6 @@ public class NetworkManager : MonoBehaviour
     // Belirli bir oyuncuya ses gönder
     public void SendVoiceToPlayer(CSteamID targetID, byte[] voiceData)
     {
-        // "VOICE|" prefix ekle
         byte[] prefix = System.Text.Encoding.UTF8.GetBytes("VOICE|");
         byte[] data = new byte[prefix.Length + voiceData.Length];
     
@@ -251,13 +250,8 @@ public class NetworkManager : MonoBehaviour
             targetID,
             data,
             (uint)data.Length,
-            EP2PSend.k_EP2PSendUnreliableNoDelay, // Ses için hızlı gönderim
+            EP2PSend.k_EP2PSendUnreliableNoDelay, // ✅ En hızlı mod (ses için)
             0
         );
-    
-        if (!success)
-        {
-            Debug.LogWarning($"⚠️ Ses verisi gönderilemedi!");
-        }
     }
 }

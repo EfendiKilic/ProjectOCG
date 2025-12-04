@@ -2793,8 +2793,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoiceManager
   recordFrequency: 16000
-  bufferLengthMs: 20
-  volumeThreshold: 0.003
+  recordLength: 1
   isMicrophoneOn: 0
   isHeadphoneOn: 0
 --- !u!4 &1259340665
