@@ -12,7 +12,7 @@ public class LobbyManager : MonoBehaviour
     protected Callback<LobbyMatchList_t> lobbyList;
     
     private CSteamID currentLobbyID;
-    private bool isJoiningByCode = false; // YENİ
+    private bool isJoiningByCode = false;
     
     void Start()
     {
@@ -36,6 +36,7 @@ public class LobbyManager : MonoBehaviour
     {
         Debug.Log("Lobi oluşturuluyor...");
         isJoiningByCode = false;
+        // Varsayılan olarak PUBLIC lobi
         SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 4);
     }
     
@@ -57,8 +58,12 @@ public class LobbyManager : MonoBehaviour
         string lobbyCode = GenerateLobbyCode(currentLobbyID);
         SteamMatchmaking.SetLobbyData(currentLobbyID, "code", lobbyCode);
         
+        // Varsayılan olarak PUBLIC
+        SteamMatchmaking.SetLobbyData(currentLobbyID, "type", "public");
+        
         Debug.Log("Lobi adı: " + lobbyName);
         Debug.Log("Lobi kodu: " + lobbyCode);
+        Debug.Log("Lobi türü: PUBLIC (varsayılan)");
     }
     
     string GenerateLobbyCode(CSteamID lobbyID)
@@ -67,14 +72,67 @@ public class LobbyManager : MonoBehaviour
         return lobbyIDStr.Substring(lobbyIDStr.Length - 6);
     }
     
+    // YENİ: Lobi türünü değiştir (sadece host)
+    public void ToggleLobbyType()
+    {
+        if (currentLobbyID == CSteamID.Nil)
+        {
+            Debug.LogError("Aktif lobi yok!");
+            return;
+        }
+        
+        // Host kontrolü
+        string hostID = SteamMatchmaking.GetLobbyData(currentLobbyID, "host");
+        string myID = SteamUser.GetSteamID().ToString();
+        
+        if (hostID != myID)
+        {
+            Debug.LogError("Sadece host lobi türünü değiştirebilir!");
+            return;
+        }
+        
+        // Mevcut türü al
+        string currentType = SteamMatchmaking.GetLobbyData(currentLobbyID, "type");
+        
+        // Türü değiştir
+        if (currentType == "public")
+        {
+            // Public → Private
+            SteamMatchmaking.SetLobbyType(currentLobbyID, ELobbyType.k_ELobbyTypeFriendsOnly);
+            SteamMatchmaking.SetLobbyData(currentLobbyID, "type", "private");
+            Debug.Log("Lobi türü değiştirildi: PRIVATE");
+            
+            if (lobbyUIController != null)
+            {
+                lobbyUIController.UpdateLobbyType("private");
+            }
+        }
+        else
+        {
+            // Private → Public
+            SteamMatchmaking.SetLobbyType(currentLobbyID, ELobbyType.k_ELobbyTypePublic);
+            SteamMatchmaking.SetLobbyData(currentLobbyID, "type", "public");
+            Debug.Log("Lobi türü değiştirildi: PUBLIC");
+            
+            if (lobbyUIController != null)
+            {
+                lobbyUIController.UpdateLobbyType("public");
+            }
+        }
+    }
+    
+    // Sadece PUBLIC lobileri ara
     public void FindLobbies()
     {
-        Debug.Log("Lobiler aranıyor...");
+        Debug.Log("Public lobiler aranıyor...");
         isJoiningByCode = false;
+        
+        // Sadece public lobileri filtrele
+        SteamMatchmaking.AddRequestLobbyListStringFilter("type", "public", ELobbyComparison.k_ELobbyComparisonEqual);
         SteamMatchmaking.RequestLobbyList();
     }
     
-    // YENİ: Lobi koduna göre lobiye katıl
+    // Lobi koduna göre lobiye katıl (HEM PUBLIC HEM PRIVATE)
     public void JoinLobbyByCode(string code)
     {
         if (string.IsNullOrEmpty(code) || code.Length != 6)
@@ -90,7 +148,7 @@ public class LobbyManager : MonoBehaviour
         Debug.Log("Lobi kodu ile aranıyor: " + code);
         isJoiningByCode = true;
         
-        // Önceki filtreleri temizle
+        // Kod ile katılırken tür filtresi EKLEME (hem public hem private bulabilsin)
         SteamMatchmaking.AddRequestLobbyListStringFilter("code", code, ELobbyComparison.k_ELobbyComparisonEqual);
         SteamMatchmaking.RequestLobbyList();
     }
@@ -112,7 +170,7 @@ public class LobbyManager : MonoBehaviour
             }
             else
             {
-                Debug.Log("Boş lobi bulunamadı! Yeni lobi oluşturuluyor...");
+                Debug.Log("Public lobi bulunamadı! Yeni lobi oluşturuluyor...");
                 CreateLobby();
             }
             return;
@@ -122,8 +180,16 @@ public class LobbyManager : MonoBehaviour
         {
             CSteamID lobbyID = SteamMatchmaking.GetLobbyByIndex(i);
             string lobbyName = SteamMatchmaking.GetLobbyData(lobbyID, "name");
+            string lobbyType = SteamMatchmaking.GetLobbyData(lobbyID, "type");
             
-            // YENİ: Lobi dolu mu kontrol et
+            // Eğer kod ile katılmıyorsa ve lobi private ise, atla
+            if (!isJoiningByCode && lobbyType == "private")
+            {
+                Debug.Log($"Private lobi atlandı: {lobbyName}");
+                continue;
+            }
+            
+            // Lobi dolu mu kontrol et
             int currentPlayers = SteamMatchmaking.GetNumLobbyMembers(lobbyID);
             int maxPlayers = SteamMatchmaking.GetLobbyMemberLimit(lobbyID);
             
@@ -138,7 +204,7 @@ public class LobbyManager : MonoBehaviour
                 continue;
             }
             
-            Debug.Log($"Lobiye katılınıyor: {lobbyName} ({currentPlayers}/{maxPlayers})");
+            Debug.Log($"Lobiye katılınıyor: {lobbyName} [{lobbyType.ToUpper()}] ({currentPlayers}/{maxPlayers})");
             SteamMatchmaking.JoinLobby(lobbyID);
             isJoiningByCode = false;
             break;
@@ -156,7 +222,7 @@ public class LobbyManager : MonoBehaviour
     {
         currentLobbyID = new CSteamID(callback.m_ulSteamIDLobby);
         
-        // YENİ: Katılma başarısız mı kontrol et
+        // Katılma başarısız mı kontrol et
         if (callback.m_EChatRoomEnterResponse != (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
         {
             Debug.LogError("Lobiye katılma başarısız! Hata kodu: " + callback.m_EChatRoomEnterResponse);
