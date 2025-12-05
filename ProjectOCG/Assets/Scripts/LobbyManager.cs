@@ -3,28 +3,25 @@ using Steamworks;
 
 public class LobbyManager : MonoBehaviour
 {
-    public LobbyUI lobbyUI; // Inspector'dan atanacak
-    public LobbyUIController lobbyUIController; // Inspector'dan atanacak
+    public LobbyUI lobbyUI;
+    public LobbyUIController lobbyUIController;
 
-    // Callback'ler (Steam'den gelen cevaplar için)
     protected Callback<LobbyCreated_t> lobbyCreated;
     protected Callback<GameLobbyJoinRequested_t> gameLobbyJoinRequested;
     protected Callback<LobbyEnter_t> lobbyEntered;
     protected Callback<LobbyMatchList_t> lobbyList;
     
-    // Mevcut lobi ID'si
     private CSteamID currentLobbyID;
+    private bool isJoiningByCode = false; // YENİ
     
     void Start()
     {
-        // Steam bağlantısı var mı kontrol et
         if (!SteamManager.Initialized)
         {
             Debug.LogError("Steam başlatılmamış!");
             return;
         }
         
-        // Callback'leri kaydet
         lobbyCreated = Callback<LobbyCreated_t>.Create(OnLobbyCreated);
         gameLobbyJoinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnGameLobbyJoinRequested);
         lobbyEntered = Callback<LobbyEnter_t>.Create(OnLobbyEntered);
@@ -35,102 +32,163 @@ public class LobbyManager : MonoBehaviour
         Debug.Log("LobbyManager hazır!");
     }
     
-    // ===== OYUN KUR BUTONU İÇİN =====
     public void CreateLobby()
     {
-        Debug.Log("🎮 Lobi oluşturuluyor...");
-        
-        // Public lobi oluştur, maksimum 4 oyuncu
+        Debug.Log("Lobi oluşturuluyor...");
+        isJoiningByCode = false;
         SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 4);
     }
     
-    // Lobi oluşturulduğunda çağrılır
     void OnLobbyCreated(LobbyCreated_t callback)
     {
         if (callback.m_eResult != EResult.k_EResultOK)
         {
-            Debug.LogError("❌ Lobi oluşturulamadı!");
+            Debug.LogError("Lobi oluşturulamadı!");
             return;
         }
         
         currentLobbyID = new CSteamID(callback.m_ulSteamIDLobby);
-        Debug.Log("✅ Lobi oluşturuldu! Lobi ID: " + currentLobbyID);
+        Debug.Log("Lobi oluşturuldu! Lobi ID: " + currentLobbyID);
         
-        // Lobi bilgilerini ayarla
         string lobbyName = SteamFriends.GetPersonaName() + "'nin Lobisi";
         SteamMatchmaking.SetLobbyData(currentLobbyID, "name", lobbyName);
         SteamMatchmaking.SetLobbyData(currentLobbyID, "host", SteamUser.GetSteamID().ToString());
         
-        Debug.Log("📝 Lobi adı: " + lobbyName);
+        string lobbyCode = GenerateLobbyCode(currentLobbyID);
+        SteamMatchmaking.SetLobbyData(currentLobbyID, "code", lobbyCode);
+        
+        Debug.Log("Lobi adı: " + lobbyName);
+        Debug.Log("Lobi kodu: " + lobbyCode);
     }
     
-    // ===== OYUN BUL BUTONU İÇİN =====
+    string GenerateLobbyCode(CSteamID lobbyID)
+    {
+        string lobbyIDStr = lobbyID.m_SteamID.ToString();
+        return lobbyIDStr.Substring(lobbyIDStr.Length - 6);
+    }
+    
     public void FindLobbies()
     {
-        Debug.Log("🔍 Lobiler aranıyor...");
-        
-        // Mevcut lobileri iste
+        Debug.Log("Lobiler aranıyor...");
+        isJoiningByCode = false;
         SteamMatchmaking.RequestLobbyList();
     }
     
-    // Lobi listesi geldiğinde çağrılır
-    void OnLobbyList(LobbyMatchList_t callback)
+    // YENİ: Lobi koduna göre lobiye katıl
+    public void JoinLobbyByCode(string code)
     {
-        Debug.Log("📋 Bulunan lobi sayısı: " + callback.m_nLobbiesMatching);
-        
-        if (callback.m_nLobbiesMatching == 0)
+        if (string.IsNullOrEmpty(code) || code.Length != 6)
         {
-            Debug.Log("⚠️ Boş lobi bulunamadı! Otomatik olarak yeni lobi oluşturuluyor...");
-            CreateLobby();
+            Debug.LogError("Geçersiz lobi kodu! Kod 6 haneli olmalıdır.");
+            if (lobbyUIController != null)
+            {
+                lobbyUIController.ShowCodeError("Geçersiz kod! 6 haneli olmalıdır.");
+            }
             return;
         }
         
-        // İlk bulunan lobiye katıl
+        Debug.Log("Lobi kodu ile aranıyor: " + code);
+        isJoiningByCode = true;
+        
+        // Önceki filtreleri temizle
+        SteamMatchmaking.AddRequestLobbyListStringFilter("code", code, ELobbyComparison.k_ELobbyComparisonEqual);
+        SteamMatchmaking.RequestLobbyList();
+    }
+    
+    void OnLobbyList(LobbyMatchList_t callback)
+    {
+        Debug.Log("Bulunan lobi sayısı: " + callback.m_nLobbiesMatching);
+        
+        if (callback.m_nLobbiesMatching == 0)
+        {
+            if (isJoiningByCode)
+            {
+                Debug.LogError("Lobi kodu bulunamadı!");
+                if (lobbyUIController != null)
+                {
+                    lobbyUIController.ShowCodeError("Lobi bulunamadı!");
+                }
+                isJoiningByCode = false;
+            }
+            else
+            {
+                Debug.Log("Boş lobi bulunamadı! Yeni lobi oluşturuluyor...");
+                CreateLobby();
+            }
+            return;
+        }
+        
         for (int i = 0; i < callback.m_nLobbiesMatching; i++)
         {
             CSteamID lobbyID = SteamMatchmaking.GetLobbyByIndex(i);
             string lobbyName = SteamMatchmaking.GetLobbyData(lobbyID, "name");
             
-            Debug.Log($"✅ Lobi bulundu: {lobbyName}");
+            // YENİ: Lobi dolu mu kontrol et
+            int currentPlayers = SteamMatchmaking.GetNumLobbyMembers(lobbyID);
+            int maxPlayers = SteamMatchmaking.GetLobbyMemberLimit(lobbyID);
             
-            // Lobiye katıl
+            if (currentPlayers >= maxPlayers)
+            {
+                Debug.LogError($"Lobi dolu! ({currentPlayers}/{maxPlayers})");
+                if (isJoiningByCode && lobbyUIController != null)
+                {
+                    lobbyUIController.ShowCodeError("Lobi dolu!");
+                }
+                isJoiningByCode = false;
+                continue;
+            }
+            
+            Debug.Log($"Lobiye katılınıyor: {lobbyName} ({currentPlayers}/{maxPlayers})");
             SteamMatchmaking.JoinLobby(lobbyID);
-            break; // Sadece ilkine katıl
+            isJoiningByCode = false;
+            break;
         }
     }
     
-    // Steam overlay'den lobiye katılma isteği geldiğinde
     void OnGameLobbyJoinRequested(GameLobbyJoinRequested_t callback)
     {
-        Debug.Log("📨 Lobiye katılma isteği alındı!");
+        Debug.Log("Lobiye katılma isteği alındı!");
+        isJoiningByCode = false;
         SteamMatchmaking.JoinLobby(callback.m_steamIDLobby);
     }
     
-    // Lobiye girildiğinde çağrılır
     void OnLobbyEntered(LobbyEnter_t callback)
     {
         currentLobbyID = new CSteamID(callback.m_ulSteamIDLobby);
+        
+        // YENİ: Katılma başarısız mı kontrol et
+        if (callback.m_EChatRoomEnterResponse != (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+        {
+            Debug.LogError("Lobiye katılma başarısız! Hata kodu: " + callback.m_EChatRoomEnterResponse);
+            
+            if (callback.m_EChatRoomEnterResponse == (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseFull)
+            {
+                Debug.LogError("Lobi dolu!");
+                if (lobbyUIController != null)
+                {
+                    lobbyUIController.ShowCodeError("Lobi dolu!");
+                }
+            }
+            return;
+        }
     
-        // Host mu yoksa oyuncu mu?
         string hostID = SteamMatchmaking.GetLobbyData(currentLobbyID, "host");
         string myID = SteamUser.GetSteamID().ToString();
     
         if (hostID == myID)
         {
-            Debug.Log("👑 Lobiye HOST olarak katıldınız!");
+            Debug.Log("Lobiye HOST olarak katıldınız!");
             NetworkManager.Instance.isHost = true;
         }
         else
         {
-            Debug.Log("🎮 Lobiye OYUNCU olarak katıldınız!");
+            Debug.Log("Lobiye OYUNCU olarak katıldınız!");
             NetworkManager.Instance.isHost = false;
         }
     
-        // Lobideki oyuncu sayısını göster
         int playerCount = SteamMatchmaking.GetNumLobbyMembers(currentLobbyID);
-        Debug.Log($"👥 Lobide {playerCount} oyuncu var");
+        Debug.Log($"Lobide {playerCount} oyuncu var");
     
-        // P2P bağlantılarını kur
         NetworkManager.Instance.ConnectToLobbyMembers(currentLobbyID);
         
         if (lobbyUI != null)
@@ -143,45 +201,39 @@ public class LobbyManager : MonoBehaviour
         }
     }
     
-    // Lobiden ayrıl
     public void LeaveLobby()
     {
         if (currentLobbyID != CSteamID.Nil)
         {
-            Debug.Log("🚪 Lobiden ayrılıyorsunuz...");
+            Debug.Log("Lobiden ayrılıyorsunuz...");
             SteamMatchmaking.LeaveLobby(currentLobbyID);
             currentLobbyID = CSteamID.Nil;
         }
     }
     
-    // Lobiye oyuncu girdiğinde/çıktığında
     void OnLobbyChatUpdate(LobbyChatUpdate_t callback)
     {
         CSteamID userChanged = new CSteamID(callback.m_ulSteamIDUserChanged);
     
-        // Lobiye giriş
         if ((callback.m_rgfChatMemberStateChange & (uint)EChatMemberStateChange.k_EChatMemberStateChangeEntered) != 0)
         {
-            Debug.Log($"➕ Oyuncu lobiye katıldı!");
+            Debug.Log("Oyuncu lobiye katıldı!");
         
             if (NetworkManager.Instance.isHost)
             {
                 NetworkManager.Instance.ConnectToLobbyMembers(currentLobbyID);
             }
         
-            // UI'yı güncelle
             if (lobbyUIController != null)
             {
                 lobbyUIController.OnPlayerJoined(userChanged);
             }
         }
     
-        // Lobiden çıkış
         if ((callback.m_rgfChatMemberStateChange & (uint)EChatMemberStateChange.k_EChatMemberStateChangeLeft) != 0)
         {
-            Debug.Log($"➖ Oyuncu lobiden ayrıldı!");
+            Debug.Log("Oyuncu lobiden ayrıldı!");
         
-            // UI'yı güncelle
             if (lobbyUIController != null)
             {
                 lobbyUIController.OnPlayerLeft(userChanged);

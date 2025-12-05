@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using Steamworks;
 using System.Collections.Generic;
+using System.Collections; // YENİ
 
 public class LobbyUIController : MonoBehaviour
 {
@@ -10,10 +11,19 @@ public class LobbyUIController : MonoBehaviour
     public GameObject mainMenuPanel;
     public GameObject lobbyPanel;
     
+    [Header("Ana Menü - Kod Girişi")] // YENİ
+    public TMP_InputField codeInputField;
+    public Button joinByCodeButton;
+    public TextMeshProUGUI codeErrorText;
+    
     [Header("Lobi Bilgileri")]
     public TextMeshProUGUI lobbyTitleText;
     public Transform playerListContent;
     public GameObject playerListItemPrefab;
+    
+    [Header("Lobi Kodu")]
+    public TextMeshProUGUI lobbyCodeText;
+    public Button copyCodeButton;
     
     [Header("Chat")]
     public Transform chatContent;
@@ -25,14 +35,24 @@ public class LobbyUIController : MonoBehaviour
     public Button leaveButton;
     
     private CSteamID currentLobbyID;
+    private string currentLobbyCode;
     private Dictionary<CSteamID, GameObject> playerListItems = new Dictionary<CSteamID, GameObject>();
     
     void Start()
     {
         sendButton.onClick.AddListener(SendChatMessage);
         leaveButton.onClick.AddListener(LeaveLobby);
+        copyCodeButton.onClick.AddListener(CopyLobbyCode);
+        joinByCodeButton.onClick.AddListener(JoinByCode); // YENİ
         
         chatInputField.onSubmit.AddListener((text) => { SendChatMessage(); });
+        codeInputField.onSubmit.AddListener((text) => { JoinByCode(); }); // YENİ
+        
+        // YENİ: Hata mesajını gizle
+        if (codeErrorText != null)
+        {
+            codeErrorText.gameObject.SetActive(false);
+        }
         
         ShowMainMenu();
     }
@@ -41,6 +61,66 @@ public class LobbyUIController : MonoBehaviour
     {
         mainMenuPanel.SetActive(true);
         lobbyPanel.SetActive(false);
+        
+        // YENİ: Input'u temizle
+        if (codeInputField != null)
+        {
+            codeInputField.text = "";
+        }
+        if (codeErrorText != null)
+        {
+            codeErrorText.gameObject.SetActive(false);
+        }
+    }
+    
+    // YENİ: Kod ile lobiye katıl
+    void JoinByCode()
+    {
+        string code = codeInputField.text.Trim().ToUpper();
+        
+        if (string.IsNullOrEmpty(code))
+        {
+            ShowCodeError("Lütfen bir kod girin!");
+            return;
+        }
+        
+        if (code.Length != 6)
+        {
+            ShowCodeError("Kod 6 haneli olmalıdır!");
+            return;
+        }
+        
+        // Hata mesajını gizle
+        if (codeErrorText != null)
+        {
+            codeErrorText.gameObject.SetActive(false);
+        }
+        
+        // LobbyManager'a gönder
+        FindObjectOfType<LobbyManager>().JoinLobbyByCode(code);
+    }
+    
+    // YENİ: Hata mesajı göster
+    public void ShowCodeError(string errorMessage)
+    {
+        if (codeErrorText != null)
+        {
+            codeErrorText.text = errorMessage;
+            codeErrorText.gameObject.SetActive(true);
+            
+            // 3 saniye sonra gizle
+            StartCoroutine(HideCodeErrorAfterDelay(3f));
+        }
+    }
+    
+    // YENİ: Hata mesajını gecikmeyle gizle
+    IEnumerator HideCodeErrorAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        if (codeErrorText != null)
+        {
+            codeErrorText.gameObject.SetActive(false);
+        }
     }
     
     public void ShowLobby(CSteamID lobbyID, bool isHost)
@@ -53,15 +133,32 @@ public class LobbyUIController : MonoBehaviour
         string lobbyName = SteamMatchmaking.GetLobbyData(lobbyID, "name");
         lobbyTitleText.text = $"LOBİ: {lobbyName}";
         
+        currentLobbyCode = SteamMatchmaking.GetLobbyData(lobbyID, "code");
+        if (lobbyCodeText != null)
+        {
+            lobbyCodeText.text = $"Lobi Kodu: {currentLobbyCode}";
+        }
+        
         RefreshPlayerList();
         
         if (isHost)
         {
             AddChatMessage("SİSTEM", "Lobi oluşturuldu! Oyuncular bekleniyor...", Color.yellow);
+            AddChatMessage("SİSTEM", $"Lobi kodu: {currentLobbyCode}", Color.cyan);
         }
         else
         {
             AddChatMessage("SİSTEM", "Lobiye katıldınız!", Color.green);
+        }
+    }
+    
+    void CopyLobbyCode()
+    {
+        if (!string.IsNullOrEmpty(currentLobbyCode))
+        {
+            GUIUtility.systemCopyBuffer = currentLobbyCode;
+            AddChatMessage("SİSTEM", "Lobi kodu kopyalandı!", Color.green);
+            Debug.Log("Lobi kodu kopyalandı: " + currentLobbyCode);
         }
     }
     
@@ -85,14 +182,12 @@ public class LobbyUIController : MonoBehaviour
             
             GameObject item = Instantiate(playerListItemPrefab, playerListContent);
             
-            // Avatar
             Image avatarImage = item.transform.Find("AvatarImage")?.GetComponent<Image>();
             if (avatarImage != null)
             {
                 StartCoroutine(SteamAvatarLoader.LoadAvatarAsync(memberID, avatarImage));
             }
             
-            // İsim
             TextMeshProUGUI nameText = item.GetComponentInChildren<TextMeshProUGUI>();
             if (memberID.ToString() == hostID)
             {
@@ -162,6 +257,7 @@ public class LobbyUIController : MonoBehaviour
         ClearChatHistory();
         
         currentLobbyID = CSteamID.Nil;
+        currentLobbyCode = "";
     }
 
     void ClearChatHistory()
