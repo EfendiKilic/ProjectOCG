@@ -604,4 +604,18 @@ public class LobbyUIController : MonoBehaviour
         AddChatMessage("SİSTEM", $"{playerName} lobiden ayrıldı!", Color.red);
         RefreshPlayerList();
     }
+    
+    public void OnHostChanged(bool isNewHost)
+    {
+        isHost = isNewHost;
+    
+        if (toggleLobbyTypeButton != null)
+        {
+            toggleLobbyTypeButton.gameObject.SetActive(isHost);
+        }
+    
+        UpdateInviteButton();
+    
+        RefreshPlayerList();
+    }
 }

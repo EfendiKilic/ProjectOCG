@@ -122,7 +122,6 @@ public class NetworkManager : MonoBehaviour
     
     void HandleMessage(CSteamID senderID, string message)
     {
-        // Chat mesajı
         if (message.StartsWith("CHAT|"))
         {
             string[] parts = message.Split('|');
@@ -140,24 +139,42 @@ public class NetworkManager : MonoBehaviour
             return;
         }
     
-        // YENİ: Kick mesajı
+        // YENİ: Host değişim mesajı
+        if (message.StartsWith("HOST_CHANGE|"))
+        {
+            string[] parts = message.Split('|');
+            if (parts.Length >= 3)
+            {
+                string newHostID = parts[1];
+                string newHostName = parts[2];
+            
+                LobbyUIController lobbyUI = FindObjectOfType<LobbyUIController>();
+                if (lobbyUI != null)
+                {
+                    lobbyUI.AddChatMessage("SİSTEM", $"{newHostName} artık yeni HOST!", Color.yellow);
+                }
+            }
+            return;
+        }
+    
         if (message == "KICK")
         {
-            Debug.Log("Host tarafından odadan atıldınız!");
-        
             LobbyUIController lobbyUI = FindObjectOfType<LobbyUIController>();
             if (lobbyUI != null)
             {
                 lobbyUI.OnKickedByHost();
             }
-        
             return;
         }
-
-        // Bağlantı mesajları
+    
         if (message == "HELLO")
         {
+            Debug.Log(" Selamlaşma mesajı alındı!");
             SendMessageToPlayer(senderID, "HELLO_BACK");
+        }
+        else if (message == "HELLO_BACK")
+        {
+            Debug.Log(" Selamlaşma cevabı alındı!");
         }
     }
     
