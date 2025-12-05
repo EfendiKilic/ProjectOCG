@@ -10,7 +10,8 @@ public class LobbyUIController : MonoBehaviour
     [Header("Paneller")]
     public GameObject mainMenuPanel;
     public GameObject lobbyPanel;
-    public GameObject invitePanel; // YENİ
+    public GameObject invitePanel;
+    public GameObject invitePopupPanel; // YENİ
     
     [Header("Ana Menü - Kod Girişi")]
     public TMP_InputField codeInputField;
@@ -28,11 +29,18 @@ public class LobbyUIController : MonoBehaviour
     public Button toggleLobbyTypeButton;
     public TextMeshProUGUI lobbyTypeText;
     
-    [Header("Davet Sistemi")] // YENİ
+    [Header("Davet Sistemi")]
     public Button openInviteButton;
     public Transform friendListContent;
     public GameObject friendListItemPrefab;
     public Button closeInviteButton;
+    
+    [Header("Davet Popup")] // YENİ
+    public Image inviterAvatarImage;
+    public TextMeshProUGUI inviterNameText;
+    public TextMeshProUGUI inviteMessageText;
+    public Button acceptInviteButton;
+    public Button declineInviteButton;
     
     [Header("Chat")]
     public Transform chatContent;
@@ -48,8 +56,12 @@ public class LobbyUIController : MonoBehaviour
     private bool isHost = false;
     private Dictionary<CSteamID, GameObject> playerListItems = new Dictionary<CSteamID, GameObject>();
     
-    // YENİ
     protected Callback<GameLobbyJoinRequested_t> gameLobbyJoinRequested;
+    
+    // YENİ: Davet bilgileri
+    private CSteamID pendingInviteLobbyID;
+    private CSteamID pendingInviterID;
+    private Coroutine inviteTimeoutCoroutine;
     
     void Start()
     {
@@ -58,13 +70,16 @@ public class LobbyUIController : MonoBehaviour
         copyCodeButton.onClick.AddListener(CopyLobbyCode);
         joinByCodeButton.onClick.AddListener(JoinByCode);
         toggleLobbyTypeButton.onClick.AddListener(ToggleLobbyType);
-        openInviteButton.onClick.AddListener(OpenInvitePanel); // YENİ
-        closeInviteButton.onClick.AddListener(CloseInvitePanel); // YENİ
+        openInviteButton.onClick.AddListener(OpenInvitePanel);
+        closeInviteButton.onClick.AddListener(CloseInvitePanel);
+        
+        // YENİ: Davet popup butonları
+        acceptInviteButton.onClick.AddListener(AcceptInvite);
+        declineInviteButton.onClick.AddListener(DeclineInvite);
         
         chatInputField.onSubmit.AddListener((text) => { SendChatMessage(); });
         codeInputField.onSubmit.AddListener((text) => { JoinByCode(); });
         
-        // YENİ: Steam davet callback'i
         gameLobbyJoinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnGameLobbyJoinRequested);
         
         if (codeErrorText != null)
@@ -77,25 +92,138 @@ public class LobbyUIController : MonoBehaviour
             invitePanel.SetActive(false);
         }
         
+        // YENİ: Popup başlangıçta kapalı
+        if (invitePopupPanel != null)
+        {
+            invitePopupPanel.SetActive(false);
+        }
+        
         ShowMainMenu();
     }
     
-    // YENİ: Steam'den davet alındığında
+    // YENİ: Steam'den davet alındığında (OYUN İÇİ POPUP)
     void OnGameLobbyJoinRequested(GameLobbyJoinRequested_t callback)
     {
-        Debug.Log("Steam'den lobi daveti alındı!");
+        Debug.Log("📨 Steam'den lobi daveti alındı!");
+        
+        CSteamID inviterID = callback.m_steamIDFriend;
+        CSteamID lobbyID = callback.m_steamIDLobby;
+        
+        // Davet bilgilerini sakla
+        pendingInviteLobbyID = lobbyID;
+        pendingInviterID = inviterID;
+        
+        // Popup'ı göster
+        ShowInvitePopup(inviterID);
+    }
+    
+    // YENİ: Davet popup'ını göster
+    void ShowInvitePopup(CSteamID inviterID)
+    {
+        if (invitePopupPanel == null)
+        {
+            Debug.LogError("InvitePopupPanel atanmamış!");
+            return;
+        }
+        
+        string inviterName = SteamFriends.GetFriendPersonaName(inviterID);
+        
+        Debug.Log($"🎮 Davet popup'ı açılıyor: {inviterName}");
+        
+        // Avatar yükle
+        if (inviterAvatarImage != null)
+        {
+            StartCoroutine(SteamAvatarLoader.LoadAvatarAsync(inviterID, inviterAvatarImage));
+        }
+        
+        // İsim
+        if (inviterNameText != null)
+        {
+            inviterNameText.text = inviterName;
+        }
+        
+        // Mesaj
+        if (inviteMessageText != null)
+        {
+            inviteMessageText.text = $"{inviterName} sizi lobisine davet ediyor!";
+        }
+        
+        // Popup'ı aç
+        invitePopupPanel.SetActive(true);
+        
+        // 10 saniye timeout başlat
+        if (inviteTimeoutCoroutine != null)
+        {
+            StopCoroutine(inviteTimeoutCoroutine);
+        }
+        inviteTimeoutCoroutine = StartCoroutine(InviteTimeout(10f));
+    }
+    
+    // YENİ: 10 saniye timeout
+    IEnumerator InviteTimeout(float seconds)
+    {
+        yield return new WaitForSeconds(seconds);
+        
+        Debug.Log("⏰ Davet süresi doldu, otomatik reddedildi");
+        DeclineInvite();
+    }
+    
+    // YENİ: Daveti kabul et
+    void AcceptInvite()
+    {
+        Debug.Log("✅ Davet kabul edildi!");
+        
+        // Timeout'u durdur
+        if (inviteTimeoutCoroutine != null)
+        {
+            StopCoroutine(inviteTimeoutCoroutine);
+            inviteTimeoutCoroutine = null;
+        }
+        
+        // Popup'ı kapat
+        if (invitePopupPanel != null)
+        {
+            invitePopupPanel.SetActive(false);
+        }
         
         // Eğer zaten bir lobideyse, önce çık
         if (currentLobbyID != CSteamID.Nil)
         {
+            Debug.Log("Mevcut lobiden ayrılıyorsunuz...");
             FindObjectOfType<LobbyManager>().LeaveLobby();
             NetworkManager.Instance.DisconnectAll();
         }
         
         // Davet edilen lobiye katıl
-        SteamMatchmaking.JoinLobby(callback.m_steamIDLobby);
+        Debug.Log($"Lobiye katılınıyor: {pendingInviteLobbyID}");
+        SteamMatchmaking.JoinLobby(pendingInviteLobbyID);
         
-        AddChatMessage("SİSTEM", "Davete katılıyorsunuz...", Color.cyan);
+        // Pending bilgileri temizle
+        pendingInviteLobbyID = CSteamID.Nil;
+        pendingInviterID = CSteamID.Nil;
+    }
+    
+    // YENİ: Daveti reddet
+    void DeclineInvite()
+    {
+        Debug.Log("❌ Davet reddedildi!");
+        
+        // Timeout'u durdur
+        if (inviteTimeoutCoroutine != null)
+        {
+            StopCoroutine(inviteTimeoutCoroutine);
+            inviteTimeoutCoroutine = null;
+        }
+        
+        // Popup'ı kapat
+        if (invitePopupPanel != null)
+        {
+            invitePopupPanel.SetActive(false);
+        }
+        
+        // Pending bilgileri temizle
+        pendingInviteLobbyID = CSteamID.Nil;
+        pendingInviterID = CSteamID.Nil;
     }
     
     public void ShowMainMenu()
@@ -187,7 +315,6 @@ public class LobbyUIController : MonoBehaviour
             toggleLobbyTypeButton.gameObject.SetActive(isHost);
         }
         
-        // YENİ: Davet butonunu güncelle
         UpdateInviteButton();
         
         RefreshPlayerList();
@@ -267,18 +394,16 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-    // YENİ: Davet butonunu güncelle (lobi doluysa devre dışı)
     void UpdateInviteButton()
     {
         if (openInviteButton == null || currentLobbyID == CSteamID.Nil)
             return;
         
         int currentPlayers = SteamMatchmaking.GetNumLobbyMembers(currentLobbyID);
-        int maxPlayers = 4; // Maksimum oyuncu sayısı
+        int maxPlayers = 4;
         
         if (currentPlayers >= maxPlayers)
         {
-            // Lobi dolu, butonu devre dışı bırak
             openInviteButton.interactable = false;
             TextMeshProUGUI buttonText = openInviteButton.GetComponentInChildren<TextMeshProUGUI>();
             if (buttonText != null)
@@ -288,7 +413,6 @@ public class LobbyUIController : MonoBehaviour
         }
         else
         {
-            // Lobi dolu değil, butonu aktif et
             openInviteButton.interactable = true;
             TextMeshProUGUI buttonText = openInviteButton.GetComponentInChildren<TextMeshProUGUI>();
             if (buttonText != null)
@@ -298,7 +422,6 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-    // YENİ: Davet panelini aç
     void OpenInvitePanel()
     {
         if (currentLobbyID == CSteamID.Nil)
@@ -321,7 +444,6 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-    // YENİ: Davet panelini kapat
     void CloseInvitePanel()
     {
         if (invitePanel != null)
@@ -330,10 +452,8 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-    // YENİ: Steam arkadaş listesini yükle
     void LoadFriendsList()
     {
-        // Önceki listeyi temizle
         foreach (Transform child in friendListContent)
         {
             Destroy(child.gameObject);
@@ -344,7 +464,6 @@ public class LobbyUIController : MonoBehaviour
         
         if (friendCount == 0)
         {
-            // Arkadaş yoksa bilgi mesajı
             GameObject emptyMessage = new GameObject("EmptyMessage");
             emptyMessage.transform.SetParent(friendListContent);
             TextMeshProUGUI text = emptyMessage.AddComponent<TextMeshProUGUI>();
@@ -361,24 +480,20 @@ public class LobbyUIController : MonoBehaviour
             string friendName = SteamFriends.GetFriendPersonaName(friendID);
             EPersonaState friendState = SteamFriends.GetFriendPersonaState(friendID);
             
-            // Liste itemini oluştur
             GameObject item = Instantiate(friendListItemPrefab, friendListContent);
             
-            // Avatar
             Image avatarImage = item.transform.Find("AvatarImage")?.GetComponent<Image>();
             if (avatarImage != null)
             {
                 StartCoroutine(SteamAvatarLoader.LoadAvatarAsync(friendID, avatarImage));
             }
             
-            // İsim
             TextMeshProUGUI nameText = item.transform.Find("NameText")?.GetComponent<TextMeshProUGUI>();
             if (nameText != null)
             {
                 nameText.text = friendName;
             }
             
-            // Durum (Online/Offline)
             TextMeshProUGUI statusText = item.transform.Find("StatusText")?.GetComponent<TextMeshProUGUI>();
             if (statusText != null)
             {
@@ -394,7 +509,6 @@ public class LobbyUIController : MonoBehaviour
                 }
             }
             
-            // Davet butonu
             Button inviteButton = item.transform.Find("InviteButton")?.GetComponent<Button>();
             if (inviteButton != null)
             {
@@ -407,7 +521,6 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-    // YENİ: Arkadaşı davet et
     void InviteFriend(CSteamID friendID)
     {
         if (currentLobbyID == CSteamID.Nil)
@@ -418,7 +531,6 @@ public class LobbyUIController : MonoBehaviour
         
         string friendName = SteamFriends.GetFriendPersonaName(friendID);
         
-        // Steam'in native davet sistemini kullan
         bool success = SteamMatchmaking.InviteUserToLobby(currentLobbyID, friendID);
         
         if (success)
@@ -432,7 +544,6 @@ public class LobbyUIController : MonoBehaviour
             Debug.LogError($"Davet gönderilemedi: {friendName}");
         }
         
-        // Paneli kapat
         CloseInvitePanel();
     }
     
@@ -498,7 +609,6 @@ public class LobbyUIController : MonoBehaviour
         
         Debug.Log($"Oyuncu listesi güncellendi: {memberCount} oyuncu");
         
-        // YENİ: Davet butonunu güncelle
         UpdateInviteButton();
     }
     
@@ -522,6 +632,19 @@ public class LobbyUIController : MonoBehaviour
     {
         yield return new WaitForSeconds(2f);
         LeaveLobby();
+    }
+    
+    public void OnHostChanged(bool isNewHost)
+    {
+        isHost = isNewHost;
+        
+        if (toggleLobbyTypeButton != null)
+        {
+            toggleLobbyTypeButton.gameObject.SetActive(isHost);
+        }
+        
+        UpdateInviteButton();
+        RefreshPlayerList();
     }
     
     public void AddChatMessage(string sender, string message, Color color)
@@ -602,20 +725,6 @@ public class LobbyUIController : MonoBehaviour
     {
         string playerName = SteamFriends.GetFriendPersonaName(playerID);
         AddChatMessage("SİSTEM", $"{playerName} lobiden ayrıldı!", Color.red);
-        RefreshPlayerList();
-    }
-    
-    public void OnHostChanged(bool isNewHost)
-    {
-        isHost = isNewHost;
-    
-        if (toggleLobbyTypeButton != null)
-        {
-            toggleLobbyTypeButton.gameObject.SetActive(isHost);
-        }
-    
-        UpdateInviteButton();
-    
         RefreshPlayerList();
     }
 }
