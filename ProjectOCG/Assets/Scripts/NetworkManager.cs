@@ -130,7 +130,7 @@ public class NetworkManager : MonoBehaviour
             {
                 string senderName = parts[1];
                 string chatMessage = parts[2];
-            
+        
                 LobbyUIController lobbyUI = FindObjectOfType<LobbyUIController>();
                 if (lobbyUI != null)
                 {
@@ -140,6 +140,20 @@ public class NetworkManager : MonoBehaviour
             return;
         }
     
+        // YENİ: Kick mesajı
+        if (message == "KICK")
+        {
+            Debug.Log("Host tarafından odadan atıldınız!");
+        
+            LobbyUIController lobbyUI = FindObjectOfType<LobbyUIController>();
+            if (lobbyUI != null)
+            {
+                lobbyUI.OnKickedByHost();
+            }
+        
+            return;
+        }
+
         // Bağlantı mesajları
         if (message == "HELLO")
         {

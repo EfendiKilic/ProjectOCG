@@ -24,7 +24,7 @@ public class LobbyUIController : MonoBehaviour
     [Header("Lobi Kodu")]
     public TextMeshProUGUI lobbyCodeText;
     public Button copyCodeButton;
-    public Button toggleLobbyTypeButton; // YENİ
+    public Button toggleLobbyTypeButton;
     public TextMeshProUGUI lobbyTypeText;
     
     [Header("Chat")]
@@ -38,7 +38,7 @@ public class LobbyUIController : MonoBehaviour
     
     private CSteamID currentLobbyID;
     private string currentLobbyCode;
-    private bool isHost = false; // YENİ
+    private bool isHost = false;
     private Dictionary<CSteamID, GameObject> playerListItems = new Dictionary<CSteamID, GameObject>();
     
     void Start()
@@ -47,7 +47,7 @@ public class LobbyUIController : MonoBehaviour
         leaveButton.onClick.AddListener(LeaveLobby);
         copyCodeButton.onClick.AddListener(CopyLobbyCode);
         joinByCodeButton.onClick.AddListener(JoinByCode);
-        toggleLobbyTypeButton.onClick.AddListener(ToggleLobbyType); // YENİ
+        toggleLobbyTypeButton.onClick.AddListener(ToggleLobbyType);
         
         chatInputField.onSubmit.AddListener((text) => { SendChatMessage(); });
         codeInputField.onSubmit.AddListener((text) => { JoinByCode(); });
@@ -122,7 +122,7 @@ public class LobbyUIController : MonoBehaviour
     public void ShowLobby(CSteamID lobbyID, bool hostStatus)
     {
         currentLobbyID = lobbyID;
-        isHost = hostStatus; // YENİ
+        isHost = hostStatus;
         
         mainMenuPanel.SetActive(false);
         lobbyPanel.SetActive(true);
@@ -136,11 +136,9 @@ public class LobbyUIController : MonoBehaviour
             lobbyCodeText.text = $"Lobi Kodu: {currentLobbyCode}";
         }
         
-        // Lobi türünü göster
         string lobbyType = SteamMatchmaking.GetLobbyData(lobbyID, "type");
         UpdateLobbyType(lobbyType);
         
-        // YENİ: Toggle butonunu sadece host görebilir
         if (toggleLobbyTypeButton != null)
         {
             toggleLobbyTypeButton.gameObject.SetActive(isHost);
@@ -160,7 +158,6 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-    // YENİ: Lobi türünü değiştir butonu
     void ToggleLobbyType()
     {
         if (!isHost)
@@ -172,7 +169,6 @@ public class LobbyUIController : MonoBehaviour
         FindObjectOfType<LobbyManager>().ToggleLobbyType();
     }
     
-    // YENİ: Lobi türü UI'ını güncelle
     public void UpdateLobbyType(string lobbyType)
     {
         if (lobbyTypeText != null)
@@ -180,7 +176,7 @@ public class LobbyUIController : MonoBehaviour
             if (lobbyType == "private")
             {
                 lobbyTypeText.text = "🔒 ÖZEL LOBİ";
-                lobbyTypeText.color = new Color(1f, 0.5f, 0f); // Turuncu
+                lobbyTypeText.color = new Color(1f, 0.5f, 0f);
                 
                 if (toggleLobbyTypeButton != null)
                 {
@@ -196,7 +192,7 @@ public class LobbyUIController : MonoBehaviour
             else
             {
                 lobbyTypeText.text = "🌍 AÇIK LOBİ";
-                lobbyTypeText.color = new Color(0f, 0.8f, 0.2f); // Yeşil
+                lobbyTypeText.color = new Color(0f, 0.8f, 0.2f);
                 
                 if (toggleLobbyTypeButton != null)
                 {
@@ -237,11 +233,13 @@ public class LobbyUIController : MonoBehaviour
         
         int memberCount = SteamMatchmaking.GetNumLobbyMembers(currentLobbyID);
         string hostID = SteamMatchmaking.GetLobbyData(currentLobbyID, "host");
+        CSteamID mySteamID = SteamUser.GetSteamID();
         
         for (int i = 0; i < memberCount; i++)
         {
             CSteamID memberID = SteamMatchmaking.GetLobbyMemberByIndex(currentLobbyID, i);
             string memberName = SteamFriends.GetFriendPersonaName(memberID);
+            bool isMe = (memberID == mySteamID);
             
             GameObject item = Instantiate(playerListItemPrefab, playerListContent);
             
@@ -261,10 +259,57 @@ public class LobbyUIController : MonoBehaviour
                 nameText.text = $"🎮 {memberName}";
             }
             
+            // YENİ: Kick butonu (sadece host, kendisi hariç)
+            Button kickButton = item.transform.Find("KickButton")?.GetComponent<Button>();
+            if (kickButton != null)
+            {
+                // Sadece host görebilir VE kendisi değilse
+                if (isHost && !isMe)
+                {
+                    kickButton.gameObject.SetActive(true);
+                    
+                    // Listener ekle
+                    CSteamID playerToKick = memberID; // Capture edilecek
+                    kickButton.onClick.RemoveAllListeners();
+                    kickButton.onClick.AddListener(() => {
+                        KickPlayer(playerToKick);
+                    });
+                }
+                else
+                {
+                    kickButton.gameObject.SetActive(false);
+                }
+            }
+            
             playerListItems.Add(memberID, item);
         }
         
         Debug.Log($"Oyuncu listesi güncellendi: {memberCount} oyuncu");
+    }
+    
+    // YENİ: Oyuncu at
+    void KickPlayer(CSteamID playerID)
+    {
+        string playerName = SteamFriends.GetFriendPersonaName(playerID);
+        
+        AddChatMessage("SİSTEM", $"{playerName} odadan atıldı!", Color.red);
+        
+        FindObjectOfType<LobbyManager>().KickPlayer(playerID);
+    }
+    
+    // YENİ: Atıldığında çağrılır
+    public void OnKickedByHost()
+    {
+        AddChatMessage("SİSTEM", "Host tarafından odadan atıldınız!", Color.red);
+        
+        // 2 saniye bekle, sonra lobiden çık
+        StartCoroutine(KickDelayedExit());
+    }
+    
+    IEnumerator KickDelayedExit()
+    {
+        yield return new WaitForSeconds(2f);
+        LeaveLobby();
     }
     
     public void AddChatMessage(string sender, string message, Color color)
