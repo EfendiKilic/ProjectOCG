@@ -1,45 +1,24 @@
 using UnityEngine;
-using TMPro;
 using Steamworks;
 using System.Collections.Generic;
 
 public class LobbyUI : MonoBehaviour
 {
-    [Header("UI Referansları")]
-    public TextMeshProUGUI lobbyInfoText;
-    
     private CSteamID currentLobbyID;
     private bool isHost = false;
     
-    void Start()
-    {
-        // Başlangıçta boş
-        UpdateLobbyInfo("Henüz lobiye katılmadınız...");
-    }
-    
     void Update()
     {
-        // Her saniye güncelle
         if (Time.frameCount % 60 == 0 && currentLobbyID != CSteamID.Nil)
         {
             RefreshLobbyInfo();
         }
     }
     
-    // Lobi bilgilerini güncelle
-    public void SetLobbyInfo(CSteamID lobbyID, bool isHostPlayer)
-    {
-        currentLobbyID = lobbyID;
-        isHost = isHostPlayer;
-        RefreshLobbyInfo();
-    }
-    
-    // Lobi bilgilerini yenile
     void RefreshLobbyInfo()
     {
         if (currentLobbyID == CSteamID.Nil)
         {
-            UpdateLobbyInfo("Henüz lobiye katılmadınız...");
             return;
         }
         
@@ -91,24 +70,6 @@ public class LobbyUI : MonoBehaviour
             string playerName = SteamFriends.GetFriendPersonaName(playerID);
             info += $"  ✅ {playerName}\n";
         }
-        
-        UpdateLobbyInfo(info);
     }
-    
-    // UI text'i güncelle
-    void UpdateLobbyInfo(string text)
-    {
-        if (lobbyInfoText != null)
-        {
-            lobbyInfoText.text = text;
-        }
-    }
-    
-    // Lobiden çık
-    public void ClearLobbyInfo()
-    {
-        currentLobbyID = CSteamID.Nil;
-        isHost = false;
-        UpdateLobbyInfo("Lobiden ayrıldınız...");
-    }
+
 }
