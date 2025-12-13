@@ -5,6 +5,15 @@ using Steamworks;
 using System.Collections.Generic;
 using System.Collections;
 
+[System.Serializable]
+public class FriendData
+{
+    public CSteamID steamID;
+    public string name;
+    public bool isCurrentlyPlaying;
+    public EPersonaState status;
+}
+
 public class LobbyUIController : MonoBehaviour
 {
     [Header("Paneller")]
@@ -364,7 +373,7 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-   void LoadFriendsList()
+    void LoadFriendsList()
 {
     foreach (Transform child in friendListContent)
     {
@@ -386,54 +395,104 @@ public class LobbyUIController : MonoBehaviour
         return;
     }
     
-    AppId_t currentGameAppId = SteamUtils.GetAppID(); // Mevcut oyunun App ID'si
-    int friendsPlayingGame = 0;
+    AppId_t currentGameAppId = SteamUtils.GetAppID();
+    
+    // ⭐ ARKADAŞLARı LİSTEYE TOPLA
+    List<FriendData> friends = new List<FriendData>();
     
     for (int i = 0; i < friendCount; i++)
     {
         CSteamID friendID = SteamFriends.GetFriendByIndex(i, EFriendFlags.k_EFriendFlagImmediate);
         
-        // ⭐ SADECE ŞU ANDA OYUNU OYNAYAN ARKADAŞLARI KONTROL ET
         FriendGameInfo_t friendGameInfo;
         bool isPlayingGame = SteamFriends.GetFriendGamePlayed(friendID, out friendGameInfo);
+        bool isPlayingThisGame = isPlayingGame && friendGameInfo.m_gameID.AppID() == currentGameAppId;
         
-        // Eğer bu oyunu oynamıyorsa atla
-        if (!isPlayingGame || friendGameInfo.m_gameID.AppID() != currentGameAppId)
+        FriendData friendData = new FriendData
         {
-            continue; // Bu arkadaşı listede gösterme
-        }
+            steamID = friendID,
+            name = SteamFriends.GetFriendPersonaName(friendID),
+            isCurrentlyPlaying = isPlayingThisGame,
+            status = SteamFriends.GetFriendPersonaState(friendID)
+        };
         
-        friendsPlayingGame++;
+        friends.Add(friendData);
+    }
+    
+    // ⭐ SIRALAMA: Oyunda olanlar üstte, sonra alfabetik
+    friends.Sort((a, b) => {
+        // 1. Öncelik: Oyunu şu anda oynuyorsa
+        if (a.isCurrentlyPlaying != b.isCurrentlyPlaying)
+            return b.isCurrentlyPlaying.CompareTo(a.isCurrentlyPlaying);
         
-        string friendName = SteamFriends.GetFriendPersonaName(friendID);
-        EPersonaState friendState = SteamFriends.GetFriendPersonaState(friendID);
+        // 2. Öncelik: İsme göre alfabetik
+        return string.Compare(a.name, b.name, System.StringComparison.OrdinalIgnoreCase);
+    });
+    
+    Debug.Log($"{friends.Count} arkadaş sıralandı");
+    
+    // ⭐ SIRALANMIŞ ARKADAŞLARı UI'DA GÖSTER
+    int friendsDisplayed = 0;
+    
+    foreach (FriendData friend in friends)
+    {
+        friendsDisplayed++;
         
         GameObject item = Instantiate(friendListItemPrefab, friendListContent);
         
+        // Avatar
         Image avatarImage = item.transform.Find("AvatarImage")?.GetComponent<Image>();
         if (avatarImage != null)
         {
-            StartCoroutine(SteamAvatarLoader.LoadAvatarAsync(friendID, avatarImage));
+            StartCoroutine(SteamAvatarLoader.LoadAvatarAsync(friend.steamID, avatarImage));
         }
         
+        // İsim
         TextMeshProUGUI nameText = item.transform.Find("NameText")?.GetComponent<TextMeshProUGUI>();
         if (nameText != null)
         {
-            nameText.text = friendName;
+            nameText.text = friend.name;
         }
         
+        // Durum (Status)
         TextMeshProUGUI statusText = item.transform.Find("StatusText")?.GetComponent<TextMeshProUGUI>();
         if (statusText != null)
         {
-            // Oyunu oynuyor, o yüzden "Oyunda" göster
-            statusText.text = "🎮 Oyunda";
-            statusText.color = Color.green;
+            if (friend.isCurrentlyPlaying)
+            {
+                statusText.text = "🎮 Oyunda";
+                statusText.color = Color.green;
+            }
+            else
+            {
+                switch (friend.status)
+                {
+                    case EPersonaState.k_EPersonaStateOnline:
+                        statusText.text = "🟢 Çevrimiçi";
+                        statusText.color = Color.green;
+                        break;
+                    case EPersonaState.k_EPersonaStateAway:
+                    case EPersonaState.k_EPersonaStateSnooze:
+                        statusText.text = "🟡 Uzakta";
+                        statusText.color = Color.yellow;
+                        break;
+                    case EPersonaState.k_EPersonaStateBusy:
+                        statusText.text = "🔴 Meşgul";
+                        statusText.color = Color.red;
+                        break;
+                    default:
+                        statusText.text = "⚫ Çevrimdışı";
+                        statusText.color = Color.gray;
+                        break;
+                }
+            }
         }
         
+        // Davet Butonu
         Button inviteButton = item.transform.Find("InviteButton")?.GetComponent<Button>();
         if (inviteButton != null)
         {
-            CSteamID capturedFriendID = friendID;
+            CSteamID capturedFriendID = friend.steamID;
             inviteButton.onClick.RemoveAllListeners();
             inviteButton.onClick.AddListener(() => {
                 InviteFriend(capturedFriendID);
@@ -441,20 +500,20 @@ public class LobbyUIController : MonoBehaviour
         }
     }
     
-    // Eğer oyunu oynayan arkadaş yoksa mesaj göster
-    if (friendsPlayingGame == 0)
+    if (friendsDisplayed == 0)
     {
         GameObject emptyMessage = new GameObject("EmptyMessage");
         emptyMessage.transform.SetParent(friendListContent);
         TextMeshProUGUI text = emptyMessage.AddComponent<TextMeshProUGUI>();
-        text.text = "Şu anda bu oyunu oynayan arkadaşınız yok.";
+        text.text = "Davet edilecek arkadaş bulunamadı.";
         text.alignment = TextAlignmentOptions.Center;
         text.fontSize = 24;
         text.color = Color.gray;
     }
     
-    Debug.Log($"{friendsPlayingGame} arkadaş şu anda oyunu oynuyor");
+    Debug.Log($"{friendsDisplayed} arkadaş listelendi (Oyunda olanlar üstte)");
 }
+    
     void InviteFriend(CSteamID friendID)
     {
         if (currentLobbyID == CSteamID.Nil)
