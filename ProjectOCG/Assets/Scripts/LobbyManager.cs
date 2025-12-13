@@ -35,43 +35,58 @@ public class LobbyManager : MonoBehaviour
     }
     
     void OnLobbyDataUpdate(LobbyDataUpdate_t callback)
+{
+    if (callback.m_ulSteamIDLobby == currentLobbyID.m_SteamID)
     {
-        if (callback.m_ulSteamIDLobby == currentLobbyID.m_SteamID)
+        CSteamID lobbyID = new CSteamID(callback.m_ulSteamIDLobby);
+        
+        // GERÇEK STEAM OWNER'I AL
+        CSteamID realOwner = SteamMatchmaking.GetLobbyOwner(lobbyID);
+        CSteamID myID = SteamUser.GetSteamID();
+        
+        string lobbyDataHost = SteamMatchmaking.GetLobbyData(lobbyID, "host");
+        
+        Debug.Log($"📡 Lobby Data Update!");
+        Debug.Log($"   Gerçek Owner: {SteamFriends.GetFriendPersonaName(realOwner)}");
+        Debug.Log($"   Lobby Data Host: {lobbyDataHost}");
+        Debug.Log($"   Ben: {SteamFriends.GetPersonaName()}");
+        
+        // Eğer gerçek owner bensem ve henüz host değilsem
+        if (realOwner == myID && !NetworkManager.Instance.isHost)
         {
-            CSteamID lobbyID = new CSteamID(callback.m_ulSteamIDLobby);
+            Debug.Log("👑 SİZ YENİ HOST OLDUNUZ!");
+            NetworkManager.Instance.isHost = true;
             
-            string newHostID = SteamMatchmaking.GetLobbyData(lobbyID, "host");
-            string myID = SteamUser.GetSteamID().ToString();
+            // Lobby data'yı da güncelle
+            SteamMatchmaking.SetLobbyData(lobbyID, "host", myID.ToString());
             
-            if (newHostID == myID && !NetworkManager.Instance.isHost)
-            {
-                Debug.Log("👑 SİZ YENİ HOST OLDUNUZ!");
-                NetworkManager.Instance.isHost = true;
-                
-                if (lobbyUIController != null)
-                {
-                    lobbyUIController.OnHostChanged(true);
-                    lobbyUIController.AddChatMessage("SİSTEM", "Siz artık yeni HOST'sunuz!", Color.yellow);
-                }
-            }
-            else if (newHostID != myID && NetworkManager.Instance.isHost)
-            {
-                Debug.Log("👤 Artık host değilsiniz");
-                NetworkManager.Instance.isHost = false;
-                
-                if (lobbyUIController != null)
-                {
-                    lobbyUIController.OnHostChanged(false);
-                }
-            }
-            
-            string lobbyType = SteamMatchmaking.GetLobbyData(lobbyID, "type");
             if (lobbyUIController != null)
             {
-                lobbyUIController.UpdateLobbyType(lobbyType);
+                lobbyUIController.OnHostChanged(true);
+                lobbyUIController.AddChatMessage("SİSTEM", "Siz artık yeni HOST'sunuz!", Color.yellow);
             }
         }
+        // Eğer gerçek owner ben değilsem ve host'sam
+        else if (realOwner != myID && NetworkManager.Instance.isHost)
+        {
+            Debug.Log("👤 Artık host değilsiniz");
+            NetworkManager.Instance.isHost = false;
+            
+            if (lobbyUIController != null)
+            {
+                lobbyUIController.OnHostChanged(false);
+                string newHostName = SteamFriends.GetFriendPersonaName(realOwner);
+                lobbyUIController.AddChatMessage("SİSTEM", $"{newHostName} artık yeni HOST!", Color.yellow);
+            }
+        }
+        
+        string lobbyType = SteamMatchmaking.GetLobbyData(lobbyID, "type");
+        if (lobbyUIController != null)
+        {
+            lobbyUIController.UpdateLobbyType(lobbyType);
+        }
     }
+}
     
     public void CreateLobby()
     {
@@ -112,18 +127,20 @@ public class LobbyManager : MonoBehaviour
     public void JoinLobbyByCode(string code)
     {
         Debug.Log($"🔍 Kod ile aranıyor: {code}");
-        
+    
         if (string.IsNullOrEmpty(code))
         {
             lobbyUIController.ShowCodeError("Geçersiz kod!");
             return;
         }
-        
+    
+        // SADECE PUBLIC LOBİLERİ ARA
         SteamMatchmaking.AddRequestLobbyListStringFilter("code", code, ELobbyComparison.k_ELobbyComparisonEqual);
+        SteamMatchmaking.AddRequestLobbyListStringFilter("type", "public", ELobbyComparison.k_ELobbyComparisonEqual);
         SteamMatchmaking.AddRequestLobbyListResultCountFilter(1);
         SteamMatchmaking.RequestLobbyList();
-        
-        Debug.Log($"📡 Kod araması başlatıldı: {code}");
+    
+        Debug.Log($"📡 Kod araması başlatıldı (sadece public lobiler): {code}");
     }
     
     public void FindLobbies()
@@ -181,18 +198,53 @@ public class LobbyManager : MonoBehaviour
     
     void OnGameLobbyJoinRequested(GameLobbyJoinRequested_t callback)
     {
-        Debug.Log("📨 Lobiye katılma isteği alındı!");
-        SteamMatchmaking.JoinLobby(callback.m_steamIDLobby);
+        Debug.Log(" Lobiye katılma isteği alındı!");
+    
+        CSteamID inviterID = callback.m_steamIDFriend;
+        CSteamID lobbyID = callback.m_steamIDLobby;
+    
+        string inviterName = SteamFriends.GetFriendPersonaName(inviterID);
+        Debug.Log($" Davet gönderen: {inviterName}");
+    
+        // POPUP'I AÇ (LobbyUIController üzerinden)
+        if (lobbyUIController != null)
+        {
+            lobbyUIController.ShowInvitePopupFromLobbyManager(inviterID, lobbyID);
+        }
+        else
+        {
+            Debug.LogError(" LobbyUIController bulunamadı! Popup açılamıyor!");
+        
+            // Fallback: Direkt katıl (eski davranış)
+            SteamMatchmaking.JoinLobby(lobbyID);
+        }
     }
     
     void OnLobbyEntered(LobbyEnter_t callback)
     {
         currentLobbyID = new CSteamID(callback.m_ulSteamIDLobby);
+
+        // GERÇEK STEAM OWNER'I AL
+        CSteamID realOwner = SteamMatchmaking.GetLobbyOwner(currentLobbyID);
+        CSteamID myID = SteamUser.GetSteamID();
     
+        // Lobby data'daki host bilgisini kontrol et
         string hostID = SteamMatchmaking.GetLobbyData(currentLobbyID, "host");
-        string myID = SteamUser.GetSteamID().ToString();
     
-        if (hostID == myID)
+        Debug.Log($"🔍 Gerçek Steam Owner: {SteamFriends.GetFriendPersonaName(realOwner)}");
+        Debug.Log($"📝 Lobby Data Host: {hostID}");
+        Debug.Log($"👤 Benim ID'm: {myID}");
+    
+        // Eğer lobby data boş veya yanlışsa, gerçek owner'ı kullan
+        if (string.IsNullOrEmpty(hostID) || hostID != realOwner.ToString())
+        {
+            Debug.Log("⚠️ Lobby data yanlış, düzeltiliyor...");
+            SteamMatchmaking.SetLobbyData(currentLobbyID, "host", realOwner.ToString());
+            hostID = realOwner.ToString();
+        }
+    
+        // BEN HOST MUYUM?
+        if (realOwner == myID)
         {
             Debug.Log("👑 Lobiye HOST olarak katıldınız!");
             NetworkManager.Instance.isHost = true;
@@ -202,12 +254,12 @@ public class LobbyManager : MonoBehaviour
             Debug.Log("🎮 Lobiye OYUNCU olarak katıldınız!");
             NetworkManager.Instance.isHost = false;
         }
-    
+
         int playerCount = SteamMatchmaking.GetNumLobbyMembers(currentLobbyID);
         Debug.Log($"👥 Lobide {playerCount} oyuncu var");
-    
+
         NetworkManager.Instance.ConnectToLobbyMembers(currentLobbyID);
-        
+    
         if (lobbyUI != null)
         {
             lobbyUI.SetLobbyInfo(currentLobbyID, NetworkManager.Instance.isHost);
@@ -274,29 +326,28 @@ public class LobbyManager : MonoBehaviour
         }
     }
     
-    // YENİ: Host devri + Ayrılma (sıralı)
     IEnumerator TransferHostAndLeave()
     {
-        Debug.Log("👑 Host devir işlemi başlıyor...");
-        
+        Debug.Log(" Host devir işlemi başlıyor...");
+    
         int memberCount = SteamMatchmaking.GetNumLobbyMembers(currentLobbyID);
-        
+    
         if (memberCount <= 1)
         {
             Debug.Log("Lobide sadece siz varsınız, direkt ayrılıyorsunuz");
             PerformLeaveLobby();
             yield break;
         }
-        
+    
         CSteamID myID = SteamUser.GetSteamID();
         CSteamID newHostID = CSteamID.Nil;
         string newHostName = "";
-        
-        // İlk oyuncuyu (kendim değilse) yeni host yap
+    
+        // İlk oyuncuyu (kendim değilse) bul
         for (int i = 0; i < memberCount; i++)
         {
             CSteamID memberID = SteamMatchmaking.GetLobbyMemberByIndex(currentLobbyID, i);
-            
+        
             if (memberID != myID)
             {
                 newHostID = memberID;
@@ -304,36 +355,36 @@ public class LobbyManager : MonoBehaviour
                 break;
             }
         }
-        
+    
         if (newHostID == CSteamID.Nil)
         {
             Debug.LogWarning("Yeni host bulunamadı!");
             PerformLeaveLobby();
             yield break;
         }
-        
+    
         Debug.Log($"👑 Yeni host belirlendi: {newHostName}");
-        
-        // 1. Steam owner'ı değiştir
+    
+        // 1. Steam owner'ı değiştir (Steam bunu otomatik yapacak ama biz de ayarlayalım)
         SteamMatchmaking.SetLobbyOwner(currentLobbyID, newHostID);
-        
-        // 2. Lobby data'yı güncelle
+    
+        // 2. Lobby data'yı HEMEN güncelle
         SteamMatchmaking.SetLobbyData(currentLobbyID, "host", newHostID.ToString());
-        
-        // 3. Diğer oyunculara bildir
-        NetworkManager.Instance.SendMessageToAll($"HOST_CHANGE|{newHostID}|{newHostName}");
-        
-        // 4. Chat'e yaz
+    
+        // 3. Chat'e yaz (diğer oyuncular görsün)
         if (lobbyUIController != null)
         {
             lobbyUIController.AddChatMessage("SİSTEM", $"Host {newHostName} oyuncusuna devredildi!", Color.yellow);
         }
-        
+    
+        // 4. Diğer oyunculara bildir
+        NetworkManager.Instance.SendMessageToAll($"HOST_CHANGE|{newHostID}|{newHostName}");
+    
         Debug.Log($"✅ Host başarıyla devredildi: {newHostName}");
-        
+    
         // 5. Biraz bekle (mesajların iletilmesi için)
         yield return new WaitForSeconds(0.5f);
-        
+    
         // 6. Şimdi lobiden ayrıl
         Debug.Log("🚪 Eski host lobiden ayrılıyor...");
         PerformLeaveLobby();
@@ -353,29 +404,48 @@ public class LobbyManager : MonoBehaviour
     void OnLobbyChatUpdate(LobbyChatUpdate_t callback)
     {
         CSteamID userChanged = new CSteamID(callback.m_ulSteamIDUserChanged);
-    
+
         if ((callback.m_rgfChatMemberStateChange & (uint)EChatMemberStateChange.k_EChatMemberStateChangeEntered) != 0)
         {
             Debug.Log($"➕ Oyuncu lobiye katıldı!");
-        
+    
             if (NetworkManager.Instance.isHost)
             {
                 NetworkManager.Instance.ConnectToLobbyMembers(currentLobbyID);
             }
-        
+    
             if (lobbyUIController != null)
             {
                 lobbyUIController.OnPlayerJoined(userChanged);
             }
         }
-    
+
         if ((callback.m_rgfChatMemberStateChange & (uint)EChatMemberStateChange.k_EChatMemberStateChangeLeft) != 0)
         {
-            Debug.Log($"➖ Oyuncu lobiden ayrıldı!");
-            
+            Debug.Log($"➖ Oyuncu lobiden ayrıldı: {SteamFriends.GetFriendPersonaName(userChanged)}");
+        
             if (lobbyUIController != null)
             {
                 lobbyUIController.OnPlayerLeft(userChanged);
+            }
+        
+            // ÖNEMLI: Eğer ayrılan oyuncu host idiyse, yeni host'u kontrol et
+            CSteamID realOwner = SteamMatchmaking.GetLobbyOwner(currentLobbyID);
+            CSteamID myID = SteamUser.GetSteamID();
+        
+            if (realOwner == myID && !NetworkManager.Instance.isHost)
+            {
+                Debug.Log("Eski host ayrıldı, SİZ YENİ HOST'SUNUZ!");
+                NetworkManager.Instance.isHost = true;
+            
+                // Lobby data'yı güncelle
+                SteamMatchmaking.SetLobbyData(currentLobbyID, "host", myID.ToString());
+            
+                if (lobbyUIController != null)
+                {
+                    lobbyUIController.OnHostChanged(true);
+                    lobbyUIController.AddChatMessage("SİSTEM", "Eski host ayrıldı, siz artık yeni HOST'sunuz!", Color.yellow);
+                }
             }
         }
     }
