@@ -4,7 +4,6 @@ using System.Collections;
 
 public class LobbyManager : MonoBehaviour
 {
-    public LobbyUI lobbyUI;
     public LobbyUIController lobbyUIController;
 
     protected Callback<LobbyCreated_t> lobbyCreated;
@@ -198,26 +197,16 @@ public class LobbyManager : MonoBehaviour
     
     void OnGameLobbyJoinRequested(GameLobbyJoinRequested_t callback)
     {
-        Debug.Log(" Lobiye katılma isteği alındı!");
-    
+        Debug.Log("🎮 Lobiye katılma isteği alındı!");
+
         CSteamID inviterID = callback.m_steamIDFriend;
         CSteamID lobbyID = callback.m_steamIDLobby;
-    
+
         string inviterName = SteamFriends.GetFriendPersonaName(inviterID);
-        Debug.Log($" Davet gönderen: {inviterName}");
-    
-        // POPUP'I AÇ (LobbyUIController üzerinden)
-        if (lobbyUIController != null)
-        {
-            lobbyUIController.ShowInvitePopupFromLobbyManager(inviterID, lobbyID);
-        }
-        else
-        {
-            Debug.LogError(" LobbyUIController bulunamadı! Popup açılamıyor!");
-        
-            // Fallback: Direkt katıl (eski davranış)
-            SteamMatchmaking.JoinLobby(lobbyID);
-        }
+        Debug.Log($"📨 Davet gönderen: {inviterName}");
+
+        // DİREKT LOBIYE KATIL (Steam'in kendi popup'ını kullan)
+        SteamMatchmaking.JoinLobby(lobbyID);
     }
     
     void OnLobbyEntered(LobbyEnter_t callback)
@@ -227,43 +216,39 @@ public class LobbyManager : MonoBehaviour
         // GERÇEK STEAM OWNER'I AL
         CSteamID realOwner = SteamMatchmaking.GetLobbyOwner(currentLobbyID);
         CSteamID myID = SteamUser.GetSteamID();
-    
+
         // Lobby data'daki host bilgisini kontrol et
         string hostID = SteamMatchmaking.GetLobbyData(currentLobbyID, "host");
-    
-        Debug.Log($"🔍 Gerçek Steam Owner: {SteamFriends.GetFriendPersonaName(realOwner)}");
-        Debug.Log($"📝 Lobby Data Host: {hostID}");
-        Debug.Log($"👤 Benim ID'm: {myID}");
-    
+
+        Debug.Log($"Gerçek Steam Owner: {SteamFriends.GetFriendPersonaName(realOwner)}");
+        Debug.Log($"Lobby Data Host: {hostID}");
+        Debug.Log($"Benim ID'm: {myID}");
+
         // Eğer lobby data boş veya yanlışsa, gerçek owner'ı kullan
         if (string.IsNullOrEmpty(hostID) || hostID != realOwner.ToString())
         {
-            Debug.Log("⚠️ Lobby data yanlış, düzeltiliyor...");
+            Debug.Log("️Lobby data yanlış, düzeltiliyor...");
             SteamMatchmaking.SetLobbyData(currentLobbyID, "host", realOwner.ToString());
             hostID = realOwner.ToString();
         }
-    
+
         // BEN HOST MUYUM?
         if (realOwner == myID)
         {
-            Debug.Log("👑 Lobiye HOST olarak katıldınız!");
+            Debug.Log(" Lobiye HOST olarak katıldınız!");
             NetworkManager.Instance.isHost = true;
         }
         else
         {
-            Debug.Log("🎮 Lobiye OYUNCU olarak katıldınız!");
+            Debug.Log(" Lobiye OYUNCU olarak katıldınız!");
             NetworkManager.Instance.isHost = false;
         }
 
         int playerCount = SteamMatchmaking.GetNumLobbyMembers(currentLobbyID);
-        Debug.Log($"👥 Lobide {playerCount} oyuncu var");
+        Debug.Log($" Lobide {playerCount} oyuncu var");
 
         NetworkManager.Instance.ConnectToLobbyMembers(currentLobbyID);
     
-        if (lobbyUI != null)
-        {
-            lobbyUI.SetLobbyInfo(currentLobbyID, NetworkManager.Instance.isHost);
-        }
         if (lobbyUIController != null)
         {
             lobbyUIController.ShowLobby(currentLobbyID, NetworkManager.Instance.isHost);
