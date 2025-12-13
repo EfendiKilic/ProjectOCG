@@ -92,6 +92,11 @@ public class LobbyUIController : MonoBehaviour
         {
             codeErrorText.gameObject.SetActive(false);
         }
+        
+        if (DiscordManager.Instance != null)
+        {
+            DiscordManager.Instance.UpdateActivity("Ana Menü", "Oyuna Başlıyor");
+        }
     }
     
     void JoinByCode()
@@ -207,6 +212,13 @@ public class LobbyUIController : MonoBehaviour
         else
         {
             AddChatMessage("SİSTEM", "Lobiye katıldınız!", Color.green);
+        }
+        
+        // ⭐ DISCORD ENTEGRASYONU EKLE
+        int playerCount = SteamMatchmaking.GetNumLobbyMembers(lobbyID);
+        if (DiscordManager.Instance != null)
+        {
+            DiscordManager.Instance.UpdateActivity("Lobide", $"{playerCount}/4 Oyuncu");
         }
     }
     
