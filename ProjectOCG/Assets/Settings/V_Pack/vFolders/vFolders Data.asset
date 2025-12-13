@@ -25,32 +25,34 @@ MonoBehaviour:
     - b928d835a42c19048893cfb0fa61677b
     - 74c1ab94c290b824ab63c4c77c21083e
     - db6ac70a3a0d83048aa9552cfded5206
+    - 8a04e0a4eb04f414190fe4fdf1b47bd0
+    - c7a728138750bee498ec52bb0dafee0c
     values:
     - iconNameOrGuid: AssemblyDefinitionAsset Icon
-      colorIndex: 2
+      colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0
     - iconNameOrGuid: AssemblyDefinitionAsset Icon
-      colorIndex: 2
+      colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0
     - iconNameOrGuid: AssemblyDefinitionAsset Icon
-      colorIndex: 2
+      colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0
     - iconNameOrGuid: AssemblyDefinitionAsset Icon
-      colorIndex: 2
+      colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0
     - iconNameOrGuid: AssemblyDefinitionAsset Icon
-      colorIndex: 2
+      colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0
     - iconNameOrGuid: Settings Icon
-      colorIndex: 2
+      colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0
-    - iconNameOrGuid: ComputeShader Icon
+    - iconNameOrGuid: cs Script Icon
       colorIndex: 7
       isIconRecursive: 0
       isColorRecursive: 0
@@ -63,11 +65,19 @@ MonoBehaviour:
       isIconRecursive: 0
       isColorRecursive: 0
     - iconNameOrGuid: AssemblyDefinitionAsset Icon
-      colorIndex: 2
+      colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0
     - iconNameOrGuid: AssemblyDefinitionAsset Icon
-      colorIndex: 2
+      colorIndex: 0
+      isIconRecursive: 0
+      isColorRecursive: 0
+    - iconNameOrGuid: AudioSource Icon
+      colorIndex: 4
+      isIconRecursive: 0
+      isColorRecursive: 0
+    - iconNameOrGuid: TextAsset Icon
+      colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0
   bookmarks: []

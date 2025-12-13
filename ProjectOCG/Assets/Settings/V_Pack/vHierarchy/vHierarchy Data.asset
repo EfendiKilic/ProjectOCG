@@ -26,6 +26,8 @@ MonoBehaviour:
         - globalObjectIdString: GlobalObjectId_V1-2-99c9720ab356a0642a771bea13969a05-1737134206-0
         - globalObjectIdString: GlobalObjectId_V1-2-99c9720ab356a0642a771bea13969a05-2094251436-0
         - globalObjectIdString: GlobalObjectId_V1-2-99c9720ab356a0642a771bea13969a05-1939799865-0
+        - globalObjectIdString: GlobalObjectId_V1-2-99c9720ab356a0642a771bea13969a05-1396859492-0
+        - globalObjectIdString: GlobalObjectId_V1-2-99c9720ab356a0642a771bea13969a05-370580844-0
         values:
         - colorIndex: 7
           iconNameOrGuid: cs Script Icon
@@ -43,3 +45,7 @@ MonoBehaviour:
           iconNameOrGuid: StandaloneInputModule Icon
         - colorIndex: 3
           iconNameOrGuid: AudioSource Icon
+        - colorIndex: 6
+          iconNameOrGuid: cs Script Icon
+        - colorIndex: 2
+          iconNameOrGuid: 
