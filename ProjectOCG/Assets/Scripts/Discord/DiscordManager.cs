@@ -33,7 +33,7 @@ public class DiscordManager : MonoBehaviour
             discord = new Discord.Discord(applicationID, (ulong)Discord.CreateFlags.Default);
             startTime = System.DateTimeOffset.Now.ToUnixTimeSeconds();
             
-            Debug.Log("✅ Discord Rich Presence başlatıldı!");
+            //Debug.Log("✅ Discord Rich Presence başlatıldı!");
             
             // Başlangıç durumunu ayarla
             UpdateActivity("Ana Menüde", "Oyuna Başlıyor");
@@ -76,7 +76,7 @@ public class DiscordManager : MonoBehaviour
         {
             if (result == Discord.Result.Ok)
             {
-                Debug.Log($"✅ Discord durumu güncellendi: {details}");
+                //Debug.Log($"✅ Discord durumu güncellendi: {details}");
             }
             else
             {

@@ -28,6 +28,7 @@ MonoBehaviour:
     - 8a04e0a4eb04f414190fe4fdf1b47bd0
     - c7a728138750bee498ec52bb0dafee0c
     - 8ba9d250b6d35864a8800830a166dd84
+    - e507764582f7265489ed6d0b56a29a05
     values:
     - iconNameOrGuid: AssemblyDefinitionAsset Icon
       colorIndex: 0
@@ -82,6 +83,10 @@ MonoBehaviour:
       isIconRecursive: 0
       isColorRecursive: 0
     - iconNameOrGuid: TextAsset Icon
+      colorIndex: 0
+      isIconRecursive: 0
+      isColorRecursive: 0
+    - iconNameOrGuid: RawImage Icon
       colorIndex: 0
       isIconRecursive: 0
       isColorRecursive: 0

@@ -121,7 +121,7 @@ AudioMixerController:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: NewAudioMixer
+  m_Name: MainMixer
   m_OutputGroup: {fileID: 0}
   m_MasterGroup: {fileID: 24300002}
   m_Snapshots:
@@ -130,7 +130,13 @@ AudioMixerController:
   m_SuspendThreshold: -80
   m_EnableSuspend: 1
   m_UpdateMode: 0
-  m_ExposedParameters: []
+  m_ExposedParameters:
+  - guid: 3382653aef29ab548815a504ca95749b
+    name: ambiance
+  - guid: f9aece254b9a49744bb12c880bc62276
+    name: music
+  - guid: d078466d15de31d4db964455616a0126
+    name: effect
   m_AudioMixerGroupViews:
   - guids:
     - 7eb5ed96e6a9df042a036a3a399fd386
